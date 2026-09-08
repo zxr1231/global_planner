@@ -130,6 +130,7 @@ include_directories(
 #   src/${PROJECT_NAME}/global_planner.cpp
 # )
 add_library(${PROJECT_NAME} src/globalPlannerLib.cpp
+                            include/${PROJECT_NAME}/returnHome.cpp
                             include/${PROJECT_NAME}/PRMKDTree.cpp
                             include/${PROJECT_NAME}/dep.cpp)
 

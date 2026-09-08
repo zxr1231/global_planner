@@ -5,6 +5,7 @@
 */
 
 #include <global_planner/dep.h>
+#include <global_planner/PRMAstar.h>
 #include <random>
 
 
@@ -307,6 +308,7 @@ namespace globalPlanner{
 	}
 
 	bool DEP::makePlan(){
+		this->bestPathGain_ = -1;
 		if (not this->odomReceived_) return false;
 		// cout << "start detecting frontier" << endl;
 		// ros::Time frontierStartTime = ros::Time::now();
@@ -348,11 +350,12 @@ namespace globalPlanner{
 		// ros::Time pathEndTime = ros::Time::now();
 		// cout << "path time: " << (pathEndTime - pathStartTime).toSec() << endl;
 		// cout << "found best path with size: " << this->bestPath_.size() << endl;
-		return true;
+		return !this->bestPath_.empty();
 	}
 
 	nav_msgs::Path DEP::getBestPath(){
 		nav_msgs::Path bestPath;
+		if (this->bestPath_.empty()) return bestPath;
 		for (int i=0; i<int(this->bestPath_.size()); ++i){
 			std::shared_ptr<PRM::Node> currNode = this->bestPath_[i];
 			geometry_msgs::PoseStamped p;
@@ -848,11 +851,12 @@ namespace globalPlanner{
 			double distance = this->calculatePathLength(path);
 			// cout << "total is distance is: " << distance << " total yaw distance is: " << yawDist << " voxel: " << path.back()->numVoxels << endl;
 			double pathTime = distance/this->vel_ + this->yawPenaltyWeight_ * yawDist/this->angularVel_;
-			double score = double(unknownVoxel)/pathTime; 
+			double score = pathTime > 1e-6 ? double(unknownVoxel)/pathTime : 0.0;
 			// cout << "unknown for path: " << n <<  " is: " << unknownVoxel << " score: " << score << " distance: " << distance << " Time: " << pathTime <<  " Last total unknown: " << path.back()->numVoxels << " last best: " << path.back()->getBestYawVoxel() << endl;
 			if (score > highestScore){
 				highestScore = score;
 				bestPath = path;
+				this->bestPathGain_ = unknownVoxel;
 			}
 		}
 		if (highestScore == 0){
