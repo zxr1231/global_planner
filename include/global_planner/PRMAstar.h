@@ -11,12 +11,12 @@
 #include <global_planner/PRMKDTree.h>
 
 namespace PRM{
-	bool inClose(std::shared_ptr<Node> n, const std::unordered_set<std::shared_ptr<Node>>& close){
+	inline bool inClose(std::shared_ptr<Node> n, const std::unordered_set<std::shared_ptr<Node>>& close){
 		std::unordered_set<std::shared_ptr<Node>>::const_iterator got = close.find(n);
 		return not (got == close.end());
 	}
 
-	std::vector<std::shared_ptr<Node>> AStar(const std::shared_ptr<KDTree>& roadmap,
+	inline std::vector<std::shared_ptr<Node>> AStar(const std::shared_ptr<KDTree>& roadmap,
 										     const std::shared_ptr<Node>& start,
 										     const std::shared_ptr<Node>& goal,
 										     const std::shared_ptr<mapManager::occMap>& map){
