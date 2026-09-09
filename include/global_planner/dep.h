@@ -90,7 +90,7 @@ namespace globalPlanner{
 
 		bool makePlan();
 		int getBestPathGain() const { return bestPathGain_; }
-		// Exhaustion of the currently reachable sampled roadmap, not ground-truth coverage.
+		// Configured gain threshold over the reachable roadmap, not ground-truth coverage.
 		bool reachableGainExhausted(int threshold, int& checkedNodes);
 		bool planReturnPath(const Eigen::Vector3d& home, nav_msgs::Path& path);
 		nav_msgs::Path getBestPath();
