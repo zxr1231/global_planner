@@ -11,13 +11,13 @@
 #include <nav_msgs/Odometry.h>
 #include <nav_msgs/Path.h>
 #include <global_planner/PRMKDTree.h>
-#include <global_planner/PRMAstar.h>
 #include <global_planner/utils.h>
 #include <opencv2/opencv.hpp>
 
 
 namespace globalPlanner{
 	class DEP{
+		friend struct ReturnHomeTestAccess; // deterministic graph fixtures, no runtime test switch
 	private:
 		std::string ns_;
 		std::string hint_;
@@ -75,6 +75,7 @@ namespace globalPlanner{
 		std::vector<std::vector<std::shared_ptr<PRM::Node>>> candidatePaths_;
 		std::vector<std::shared_ptr<PRM::Node>> bestPath_;
 		std::vector<std::pair<Eigen::Vector3d, double>> frontierPointPairs_;
+		int bestPathGain_ = -1;
 
 
 	public:
@@ -88,6 +89,10 @@ namespace globalPlanner{
 		void registerCallback();
 
 		bool makePlan();
+		int getBestPathGain() const { return bestPathGain_; }
+		// Exhaustion of the currently reachable sampled roadmap, not ground-truth coverage.
+		bool reachableGainExhausted(int threshold, int& checkedNodes);
+		bool planReturnPath(const Eigen::Vector3d& home, nav_msgs::Path& path);
 		nav_msgs::Path getBestPath();
 		void detectFrontierRegion(std::vector<std::pair<Eigen::Vector3d, double>>& frontierPointPairs);
 		void buildRoadMap();
@@ -127,5 +132,3 @@ namespace globalPlanner{
 
 
 #endif
-
-

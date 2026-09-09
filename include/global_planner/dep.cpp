@@ -5,6 +5,7 @@
 */
 
 #include <global_planner/dep.h>
+#include <global_planner/PRMAstar.h>
 #include <random>
 
 
@@ -307,6 +308,7 @@ namespace globalPlanner{
 	}
 
 	bool DEP::makePlan(){
+		this->bestPathGain_ = -1;
 		if (not this->odomReceived_) return false;
 		// cout << "start detecting frontier" << endl;
 		// ros::Time frontierStartTime = ros::Time::now();
@@ -348,11 +350,12 @@ namespace globalPlanner{
 		// ros::Time pathEndTime = ros::Time::now();
 		// cout << "path time: " << (pathEndTime - pathStartTime).toSec() << endl;
 		// cout << "found best path with size: " << this->bestPath_.size() << endl;
-		return true;
+		return !this->bestPath_.empty();
 	}
 
 	nav_msgs::Path DEP::getBestPath(){
 		nav_msgs::Path bestPath;
+		if (this->bestPath_.empty()) return bestPath;
 		for (int i=0; i<int(this->bestPath_.size()); ++i){
 			std::shared_ptr<PRM::Node> currNode = this->bestPath_[i];
 			geometry_msgs::PoseStamped p;
@@ -788,13 +791,23 @@ namespace globalPlanner{
 
 	bool DEP::findCandidatePath(const std::vector<std::shared_ptr<PRM::Node>>& goalCandidates, std::vector<std::vector<std::shared_ptr<PRM::Node>>>& candidatePaths){
 		bool findPath = false;
-		// find nearest node of current location
-		std::shared_ptr<PRM::Node> currPos;
-		currPos.reset(new PRM::Node (this->position_));
-		std::shared_ptr<PRM::Node> start = this->roadmap_->nearestNeighbor(currPos);
-
+		// Connect the current pose to every nearby known-free roadmap node.
+		// Selecting only the nearest node can strand search in a disconnected
+		// component even when another safe connector and informative path exist.
+		std::shared_ptr<PRM::Node> start(new PRM::Node(this->position_));
+		for (const auto& node : this->prmNodeVec_){
+			const double distance = (node->pos - this->position_).norm();
+			if (distance <= this->maxConnectDist_ &&
+				(distance <= 1e-6 ? this->map_->isInflatedFree(node->pos) :
+				 this->map_->isInflatedFreeLine(this->position_, node->pos))){
+				start->adjNodes.insert(node);
+			}
+		}
 		candidatePaths.clear();
+		if (start->adjNodes.empty()) return false;
+		std::unordered_set<std::shared_ptr<PRM::Node>> attempted;
 		for (std::shared_ptr<PRM::Node> goal : goalCandidates){
+			attempted.insert(goal);
 			std::vector<std::shared_ptr<PRM::Node>> path = PRM::AStar(this->roadmap_, start, goal, this->map_);
 			if (int(path.size()) != 0){
 				findPath = true;
@@ -802,11 +815,48 @@ namespace globalPlanner{
 			else{
 				continue;
 			}
-			path.insert(path.begin(), currPos);
 			std::vector<std::shared_ptr<PRM::Node>> pathSc;
 			this->shortcutPath(path, pathSc);
 			candidatePaths.push_back(pathSc);
 		}
+		if (findPath) return true;
+
+		// All globally prefiltered goals were disconnected. Refresh gains only
+		// in the component reachable from the current pose and use its best nodes
+		// as recovery candidates. This preserves the normal selection path above.
+		std::queue<std::shared_ptr<PRM::Node>> open;
+		std::unordered_set<std::shared_ptr<PRM::Node>> reachable;
+		for (const auto& node : start->adjNodes){ reachable.insert(node); open.push(node); }
+		while (!open.empty() && ros::ok()){
+			const auto node = open.front(); open.pop();
+			for (const auto& next : node->adjNodes){
+				if (!this->prmNodeVec_.count(next) || reachable.count(next) ||
+					!this->map_->isInflatedFreeLine(node->pos, next->pos)) continue;
+				reachable.insert(next); open.push(next);
+			}
+		}
+		std::priority_queue<std::shared_ptr<PRM::Node>,
+			std::vector<std::shared_ptr<PRM::Node>>, PRM::GainCompareNode> recoveryGoals;
+		for (const auto& node : reachable){
+			std::unordered_map<double, int> yawGains;
+			node->numVoxels = this->calculateUnknown(node, yawGains);
+			node->yawNumVoxels = yawGains;
+			if (!attempted.count(node)) recoveryGoals.push(node);
+		}
+		int selected = 0;
+		while (!recoveryGoals.empty() && selected < this->maxCandidateNum_ && ros::ok()){
+			const auto goal = recoveryGoals.top(); recoveryGoals.pop();
+			std::vector<std::shared_ptr<PRM::Node>> path =
+				PRM::AStar(this->roadmap_, start, goal, this->map_);
+			if (path.size() < 2) continue;
+			std::vector<std::shared_ptr<PRM::Node>> pathSc;
+			this->shortcutPath(path, pathSc);
+			if (pathSc.size() < 2) continue;
+			candidatePaths.push_back(pathSc);
+			findPath = true;
+			++selected;
+		}
+		if (findPath) ROS_WARN("[DEP] Global gain candidates were unreachable; using %d candidates from the current reachable component.", selected);
 		return findPath;
 	}
 
@@ -848,11 +898,12 @@ namespace globalPlanner{
 			double distance = this->calculatePathLength(path);
 			// cout << "total is distance is: " << distance << " total yaw distance is: " << yawDist << " voxel: " << path.back()->numVoxels << endl;
 			double pathTime = distance/this->vel_ + this->yawPenaltyWeight_ * yawDist/this->angularVel_;
-			double score = double(unknownVoxel)/pathTime; 
+			double score = pathTime > 1e-6 ? double(unknownVoxel)/pathTime : 0.0;
 			// cout << "unknown for path: " << n <<  " is: " << unknownVoxel << " score: " << score << " distance: " << distance << " Time: " << pathTime <<  " Last total unknown: " << path.back()->numVoxels << " last best: " << path.back()->getBestYawVoxel() << endl;
 			if (score > highestScore){
 				highestScore = score;
 				bestPath = path;
+				this->bestPathGain_ = unknownVoxel;
 			}
 		}
 		if (highestScore == 0){
