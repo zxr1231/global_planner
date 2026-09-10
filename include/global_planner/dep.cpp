@@ -10,7 +10,7 @@
 
 
 namespace globalPlanner{
-	DEP::DEP(const ros::NodeHandle& nh) : nh_(nh){
+	DEP::DEP(const ros::NodeHandle& nh) : nh_(nh), rng_(1){
 		this->ns_ = "/DEP";
 		this->hint_ = "[DEP]";
 		this->initParam();
@@ -29,6 +29,12 @@ namespace globalPlanner{
 	}
 
 	void DEP::initParam(){
+		int configuredSeed = 1;
+		this->nh_.param(this->ns_ + "/random_seed", configuredSeed, 1);
+		if (configuredSeed < 0) configuredSeed = 1;
+		this->setRandomSeed(static_cast<uint32_t>(configuredSeed));
+		cout << this->hint_ << ": Random seed: " << this->randomSeed_ << endl;
+
 		// odom topic name
 		if (not this->nh_.getParam(this->ns_ + "/odom_topic", this->odomTopic_)){
 			this->odomTopic_ = "/CERLAB/quadcopter/odom";
@@ -308,45 +314,78 @@ namespace globalPlanner{
 	}
 
 	bool DEP::makePlan(){
+		using Clock = std::chrono::steady_clock;
+		const auto totalStart = Clock::now();
+		auto elapsedMs = [](const Clock::time_point& start){
+			return std::chrono::duration<double, std::milli>(Clock::now()-start).count();
+		};
+		this->lastPlanningMetrics_ = DEPPlanningMetrics();
+		this->lastPlanningMetrics_.sequence = ++this->planningSequence_;
 		this->bestPathGain_ = -1;
-		if (not this->odomReceived_) return false;
+		if (not this->odomReceived_){
+			this->lastPlanningMetrics_.totalMs = elapsedMs(totalStart);
+			return false;
+		}
 		// cout << "start detecting frontier" << endl;
 		// ros::Time frontierStartTime = ros::Time::now();
+		auto stageStart = Clock::now();
 		this->detectFrontierRegion(this->frontierPointPairs_);
+		this->lastPlanningMetrics_.frontierMs = elapsedMs(stageStart);
 		// ros::Time frontierEndTime = ros::Time::now();
 		// cout << "frontier detection time: " << (frontierEndTime - frontierStartTime).toSec() << endl;
 
 
 		// cout << "start building roadmap" << endl;
 		// ros::Time buildStartTime = ros::Time::now();
+		stageStart = Clock::now();
 		this->buildRoadMap();
+		this->lastPlanningMetrics_.roadmapMs = elapsedMs(stageStart);
+		this->lastPlanningMetrics_.roadmapNodes = this->prmNodeVec_.size();
 		// ros::Time buildEndTime = ros::Time::now();
 		// cout << "build roadmap time: " << (buildEndTime - buildStartTime).toSec() << endl;
 
 		// cout << "start pruning nodes" << endl;
 		// ros::Time updateStartTime = ros::Time::now();
+		stageStart = Clock::now();
 		this->pruneNodes();
+		this->lastPlanningMetrics_.pruneMs = elapsedMs(stageStart);
+		this->lastPlanningMetrics_.roadmapNodes = this->prmNodeVec_.size();
 
 		// cout << "start update information gain" << endl;
+		stageStart = Clock::now();
 		this->updateInformationGain();
+		this->lastPlanningMetrics_.gainUpdateMs = elapsedMs(stageStart);
 		// ros::Time updateEndTime = ros::Time::now();
 		// cout << "update time: " << (updateEndTime - updateStartTime).toSec() << endl;
 
 		// cout << "start get goal candidates" << endl;
 		// ros::Time pathStartTime = ros::Time::now();
+		stageStart = Clock::now();
 		this->getBestViewCandidates(this->goalCandidates_);
+		this->lastPlanningMetrics_.goalSelectionMs = elapsedMs(stageStart);
+		this->lastPlanningMetrics_.goalCandidates = this->goalCandidates_.size();
 
 		// cout << "finish best view candidate with size: " << this->goalCandidates_.size() << endl;
 
+		stageStart = Clock::now();
 		bool findCandidatePathSuccess = this->findCandidatePath(this->goalCandidates_, this->candidatePaths_);
+		this->lastPlanningMetrics_.candidateSearchMs = elapsedMs(stageStart);
+		this->lastPlanningMetrics_.candidatePaths = this->candidatePaths_.size();
+		this->lastPlanningMetrics_.recoveryUsed = this->lastRecoveryUsed_;
 
 		// cout << "finish candidate path with size: " << this->candidatePaths_.size() << endl;
 		if (not findCandidatePathSuccess){
 			// cout << "Find candidate paths fails. need generate more samples." << endl;
+			this->lastPlanningMetrics_.totalMs = elapsedMs(totalStart);
 			return false;
 		}
 
+		stageStart = Clock::now();
 		this->findBestPath(this->candidatePaths_, this->bestPath_);
+		this->lastPlanningMetrics_.pathScoringMs = elapsedMs(stageStart);
+		this->lastPlanningMetrics_.bestPathGain = this->bestPathGain_;
+		this->lastPlanningMetrics_.success = !this->bestPath_.empty();
+		this->lastPlanningMetrics_.totalMs = elapsedMs(totalStart);
 		// ros::Time pathEndTime = ros::Time::now();
 		// cout << "path time: " << (pathEndTime - pathStartTime).toSec() << endl;
 		// cout << "found best path with size: " << this->bestPath_.size() << endl;
@@ -791,6 +830,7 @@ namespace globalPlanner{
 
 	bool DEP::findCandidatePath(const std::vector<std::shared_ptr<PRM::Node>>& goalCandidates, std::vector<std::vector<std::shared_ptr<PRM::Node>>>& candidatePaths){
 		bool findPath = false;
+		this->lastRecoveryUsed_ = false;
 		// Connect the current pose to every nearby known-free roadmap node.
 		// Selecting only the nearest node can strand search in a disconnected
 		// component even when another safe connector and informative path exist.
@@ -856,7 +896,10 @@ namespace globalPlanner{
 			findPath = true;
 			++selected;
 		}
-		if (findPath) ROS_WARN("[DEP] Global gain candidates were unreachable; using %d candidates from the current reachable component.", selected);
+		if (findPath){
+			this->lastRecoveryUsed_ = true;
+			ROS_WARN("[DEP] Global gain candidates were unreachable; using %d candidates from the current reachable component.", selected);
+		}
 		return findPath;
 	}
 
@@ -1018,9 +1061,9 @@ namespace globalPlanner{
 		bool valid = false;
 		Eigen::Vector3d p;
 		while (valid == false){	
-			p(0) = globalPlanner::randomNumber(minSampleRegion(0), maxSampleRegion(0));
-			p(1) = globalPlanner::randomNumber(minSampleRegion(1), maxSampleRegion(1));
-			p(2) = globalPlanner::randomNumber(minSampleRegion(2), maxSampleRegion(2));
+			p(0) = this->sampleUniform(minSampleRegion(0), maxSampleRegion(0));
+			p(1) = this->sampleUniform(minSampleRegion(1), maxSampleRegion(1));
+			p(2) = this->sampleUniform(minSampleRegion(2), maxSampleRegion(2));
 
 			valid = this->isPosValid(p, this->safeDistXY_, this->safeDistZ_);
 
@@ -1134,10 +1177,13 @@ namespace globalPlanner{
 		 	normalizedWeights.push_back(weight/total);
 		 }
 
-		std::random_device rd;
-		std::mt19937 gen(rd());
 		std::discrete_distribution<int> distribution(normalizedWeights.begin(), normalizedWeights.end());
-		return distribution(gen);
+		return distribution(this->rng_);
+	}
+
+	double DEP::sampleUniform(double min, double max){
+		std::uniform_real_distribution<double> distribution(min, max);
+		return distribution(this->rng_);
 	}
 
 
@@ -1155,15 +1201,15 @@ namespace globalPlanner{
 		double zmin = frontierCenter(2);
 		double zmax = frontierCenter(2);
 		Eigen::Vector3d frontierPoint;
-		frontierPoint(0) = globalPlanner::randomNumber(xmin, xmax);
-		frontierPoint(1) = globalPlanner::randomNumber(ymin, ymax);
-		frontierPoint(2) = globalPlanner::randomNumber(zmin, zmax);
+		frontierPoint(0) = this->sampleUniform(xmin, xmax);
+		frontierPoint(1) = this->sampleUniform(ymin, ymax);
+		frontierPoint(2) = this->sampleUniform(zmin, zmax);
 		std::shared_ptr<PRM::Node> frontierNode (new PRM::Node(frontierPoint));
 		return frontierNode;
 	}
 
 	std::shared_ptr<PRM::Node> DEP::extendNode(const std::shared_ptr<PRM::Node>& n, const std::shared_ptr<PRM::Node>& target){
-		double extendDist = randomNumber(this->distThresh_, this->maxConnectDist_);
+		double extendDist = this->sampleUniform(this->distThresh_, this->maxConnectDist_);
 		Eigen::Vector3d p = n->pos + (target->pos - n->pos)/(target->pos - n->pos).norm() * extendDist;
 		p(0) = std::max(this->globalRegionMin_(0), std::min(p(0), this->globalRegionMax_(0)));
 		p(1) = std::max(this->globalRegionMin_(1), std::min(p(1), this->globalRegionMax_(1)));

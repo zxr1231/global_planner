@@ -13,9 +13,28 @@
 #include <global_planner/PRMKDTree.h>
 #include <global_planner/utils.h>
 #include <opencv2/opencv.hpp>
+#include <chrono>
 
 
 namespace globalPlanner{
+	struct DEPPlanningMetrics{
+		uint64_t sequence = 0;
+		bool success = false;
+		bool recoveryUsed = false;
+		int roadmapNodes = 0;
+		int goalCandidates = 0;
+		int candidatePaths = 0;
+		int bestPathGain = -1;
+		double frontierMs = 0.0;
+		double roadmapMs = 0.0;
+		double pruneMs = 0.0;
+		double gainUpdateMs = 0.0;
+		double goalSelectionMs = 0.0;
+		double candidateSearchMs = 0.0;
+		double pathScoringMs = 0.0;
+		double totalMs = 0.0;
+	};
+
 	class DEP{
 		friend struct ReturnHomeTestAccess; // deterministic graph fixtures, no runtime test switch
 	private:
@@ -63,6 +82,8 @@ namespace globalPlanner{
 		int maxCandidateNum_;
 		double updateDist_;
 		double yawPenaltyWeight_;
+		uint32_t randomSeed_ = 1;
+		std::mt19937 rng_;
 
 		// data
 		bool odomReceived_ = false;
@@ -76,6 +97,9 @@ namespace globalPlanner{
 		std::vector<std::shared_ptr<PRM::Node>> bestPath_;
 		std::vector<std::pair<Eigen::Vector3d, double>> frontierPointPairs_;
 		int bestPathGain_ = -1;
+		uint64_t planningSequence_ = 0;
+		bool lastRecoveryUsed_ = false;
+		DEPPlanningMetrics lastPlanningMetrics_;
 
 
 	public:
@@ -89,6 +113,9 @@ namespace globalPlanner{
 		void registerCallback();
 
 		bool makePlan();
+		uint32_t getRandomSeed() const { return randomSeed_; }
+		void setRandomSeed(uint32_t seed) { randomSeed_ = seed; rng_.seed(seed); }
+		DEPPlanningMetrics getLastPlanningMetrics() const { return lastPlanningMetrics_; }
 		int getBestPathGain() const { return bestPathGain_; }
 		// Configured gain threshold over the reachable roadmap, not ground-truth coverage.
 		bool reachableGainExhausted(int threshold, int& checkedNodes);
@@ -119,6 +146,7 @@ namespace globalPlanner{
 		double calculatePathLength(const std::vector<shared_ptr<PRM::Node>>& path);
 		void shortcutPath(const std::vector<std::shared_ptr<PRM::Node>>& path, std::vector<std::shared_ptr<PRM::Node>>& pathSc);
 		int weightedSample(const std::vector<double>& weights);
+		double sampleUniform(double min, double max);
 		std::shared_ptr<PRM::Node> sampleFrontierPoint(const std::vector<double>& sampleWeights);
 		std::shared_ptr<PRM::Node> extendNode(const std::shared_ptr<PRM::Node>& n, const std::shared_ptr<PRM::Node>& target);
 
