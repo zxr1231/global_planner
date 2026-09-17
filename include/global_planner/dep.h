@@ -35,6 +35,15 @@ namespace globalPlanner{
 		double totalMs = 0.0;
 	};
 
+	struct DEPPathLegacyMetrics{
+		bool valid = false;
+		int gain = 0;
+		double pathLength = 0.0;
+		double yawDistance = 0.0;
+		double estimatedTime = 0.0;
+		double score = 0.0;
+	};
+
 	class DEP{
 		friend struct ReturnHomeTestAccess; // deterministic graph fixtures, no runtime test switch
 	private:
@@ -99,6 +108,7 @@ namespace globalPlanner{
 		std::unordered_set<std::shared_ptr<PRM::Node>> prmNodeVec_; // all nodes
 		std::vector<std::shared_ptr<PRM::Node>> goalCandidates_;
 		std::vector<std::vector<std::shared_ptr<PRM::Node>>> candidatePaths_;
+		std::vector<DEPPathLegacyMetrics> candidateLegacyMetrics_;
 		std::vector<std::shared_ptr<PRM::Node>> bestPath_;
 		std::vector<std::pair<Eigen::Vector3d, double>> frontierPointPairs_;
 		int bestPathGain_ = -1;

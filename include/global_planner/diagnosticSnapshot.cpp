@@ -182,7 +182,17 @@ namespace globalPlanner {
 		}
 		graph << "],\n  \"candidate_paths\": [\n";
 		for (size_t p = 0; p < this->candidatePaths_.size(); ++p){
-			graph << "    {\"id\": " << p << ", \"waypoints\": [";
+			graph << "    {\"id\": " << p;
+			if (p < this->candidateLegacyMetrics_.size()){
+				const auto& metrics = this->candidateLegacyMetrics_[p];
+				graph << ", \"legacy_metrics\": {\"valid\": " << (metrics.valid ? "true" : "false")
+					<< ", \"gain\": " << metrics.gain
+					<< ", \"path_length\": " << metrics.pathLength
+					<< ", \"yaw_distance\": " << metrics.yawDistance
+					<< ", \"estimated_time\": " << metrics.estimatedTime
+					<< ", \"score\": " << metrics.score << "}";
+			}
+			graph << ", \"waypoints\": [";
 			const auto& path = this->candidatePaths_[p];
 			for (size_t i = 0; i < path.size(); ++i){
 				if (i) graph << ", ";

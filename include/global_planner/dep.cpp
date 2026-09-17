@@ -918,10 +918,15 @@ namespace globalPlanner{
 	void DEP::findBestPath(const std::vector<std::vector<std::shared_ptr<PRM::Node>>>& candidatePaths, std::vector<std::shared_ptr<PRM::Node>>& bestPath){
 		// find path highest unknown
 		bestPath.clear();
+		this->candidateLegacyMetrics_.clear();
+		this->candidateLegacyMetrics_.reserve(candidatePaths.size());
 		double highestScore = -1;
 		for (int n=0; n<int(candidatePaths.size()); ++n){
 			std::vector<std::shared_ptr<PRM::Node>> path = candidatePaths[n]; 
-			if (int(path.size()) == 0) continue;
+			if (int(path.size()) == 0){
+				this->candidateLegacyMetrics_.push_back(DEPPathLegacyMetrics());
+				continue;
+			}
 			double yawDist = 0;
 			double prevYaw = this->currYaw_;
 			int unknownVoxel = 0;
@@ -954,6 +959,14 @@ namespace globalPlanner{
 			// cout << "total is distance is: " << distance << " total yaw distance is: " << yawDist << " voxel: " << path.back()->numVoxels << endl;
 			double pathTime = distance/this->vel_ + this->yawPenaltyWeight_ * yawDist/this->angularVel_;
 			double score = pathTime > 1e-6 ? double(unknownVoxel)/pathTime : 0.0;
+			DEPPathLegacyMetrics metrics;
+			metrics.valid = true;
+			metrics.gain = unknownVoxel;
+			metrics.pathLength = distance;
+			metrics.yawDistance = yawDist;
+			metrics.estimatedTime = pathTime;
+			metrics.score = score;
+			this->candidateLegacyMetrics_.push_back(metrics);
 			// cout << "unknown for path: " << n <<  " is: " << unknownVoxel << " score: " << score << " distance: " << distance << " Time: " << pathTime <<  " Last total unknown: " << path.back()->numVoxels << " last best: " << path.back()->getBestYawVoxel() << endl;
 			if (score > highestScore){
 				highestScore = score;
