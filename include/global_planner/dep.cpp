@@ -34,6 +34,12 @@ namespace globalPlanner{
 		if (configuredSeed < 0) configuredSeed = 1;
 		this->setRandomSeed(static_cast<uint32_t>(configuredSeed));
 		cout << this->hint_ << ": Random seed: " << this->randomSeed_ << endl;
+		this->nh_.param(this->ns_ + "/diagnostics/snapshot_enabled", this->diagnosticSnapshotEnabled_, false);
+		this->nh_.param<std::string>(this->ns_ + "/diagnostics/snapshot_directory",
+			this->diagnosticSnapshotDir_, "/tmp/cerlab_r1_snapshots");
+		this->nh_.param(this->ns_ + "/diagnostics/snapshot_stride", this->diagnosticSnapshotStride_, 1);
+		this->nh_.param(this->ns_ + "/diagnostics/snapshot_max", this->diagnosticSnapshotMax_, 0);
+		this->diagnosticSnapshotStride_ = std::max(1, this->diagnosticSnapshotStride_);
 
 		// odom topic name
 		if (not this->nh_.getParam(this->ns_ + "/odom_topic", this->odomTopic_)){
@@ -386,6 +392,12 @@ namespace globalPlanner{
 		this->lastPlanningMetrics_.bestPathGain = this->bestPathGain_;
 		this->lastPlanningMetrics_.success = !this->bestPath_.empty();
 		this->lastPlanningMetrics_.totalMs = elapsedMs(totalStart);
+		if (this->diagnosticSnapshotEnabled_ &&
+			(this->planningSequence_ % static_cast<uint64_t>(this->diagnosticSnapshotStride_) == 0) &&
+			(this->diagnosticSnapshotMax_ <= 0 ||
+			 this->diagnosticSnapshotsWritten_ < static_cast<uint64_t>(this->diagnosticSnapshotMax_))){
+			if (this->exportDiagnosticSnapshot()) ++this->diagnosticSnapshotsWritten_;
+		}
 		// ros::Time pathEndTime = ros::Time::now();
 		// cout << "path time: " << (pathEndTime - pathStartTime).toSec() << endl;
 		// cout << "found best path with size: " << this->bestPath_.size() << endl;

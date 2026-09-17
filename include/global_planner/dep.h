@@ -84,6 +84,11 @@ namespace globalPlanner{
 		double yawPenaltyWeight_;
 		uint32_t randomSeed_ = 1;
 		std::mt19937 rng_;
+		bool diagnosticSnapshotEnabled_ = false;
+		std::string diagnosticSnapshotDir_;
+		int diagnosticSnapshotStride_ = 1;
+		int diagnosticSnapshotMax_ = 0;
+		uint64_t diagnosticSnapshotsWritten_ = 0;
 
 		// data
 		bool odomReceived_ = false;
@@ -145,6 +150,7 @@ namespace globalPlanner{
 		int calculateUnknown(const shared_ptr<PRM::Node>& n, std::unordered_map<double, int>& yawNumVoxels);
 		double calculatePathLength(const std::vector<shared_ptr<PRM::Node>>& path);
 		void shortcutPath(const std::vector<std::shared_ptr<PRM::Node>>& path, std::vector<std::shared_ptr<PRM::Node>>& pathSc);
+		bool exportDiagnosticSnapshot();
 		int weightedSample(const std::vector<double>& weights);
 		double sampleUniform(double min, double max);
 		std::shared_ptr<PRM::Node> sampleFrontierPoint(const std::vector<double>& sampleWeights);
