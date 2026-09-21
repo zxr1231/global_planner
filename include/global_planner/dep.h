@@ -107,11 +107,13 @@ namespace globalPlanner{
 		// std::vector<std::shared_ptr<PRM::Node>> prmNodeVec_; // all nodes		
 		std::unordered_set<std::shared_ptr<PRM::Node>> prmNodeVec_; // all nodes
 		std::vector<std::shared_ptr<PRM::Node>> goalCandidates_;
+		std::vector<std::vector<std::shared_ptr<PRM::Node>>> candidateRawPaths_;
 		std::vector<std::vector<std::shared_ptr<PRM::Node>>> candidatePaths_;
 		std::vector<DEPPathLegacyMetrics> candidateLegacyMetrics_;
 		std::vector<std::shared_ptr<PRM::Node>> bestPath_;
 		std::vector<std::pair<Eigen::Vector3d, double>> frontierPointPairs_;
 		int bestPathGain_ = -1;
+		int bestCandidateIndex_ = -1;
 		uint64_t planningSequence_ = 0;
 		bool lastRecoveryUsed_ = false;
 		DEPPlanningMetrics lastPlanningMetrics_;
@@ -136,6 +138,7 @@ namespace globalPlanner{
 		bool reachableGainExhausted(int threshold, int& checkedNodes);
 		bool planReturnPath(const Eigen::Vector3d& home, nav_msgs::Path& path);
 		nav_msgs::Path getBestPath();
+		nav_msgs::Path getBestRawPath();
 		void detectFrontierRegion(std::vector<std::pair<Eigen::Vector3d, double>>& frontierPointPairs);
 		void buildRoadMap();
 		void pruneNodes();

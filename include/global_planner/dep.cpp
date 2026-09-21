@@ -429,6 +429,29 @@ namespace globalPlanner{
 		return bestPath;
 	}
 
+	nav_msgs::Path DEP::getBestRawPath(){
+		nav_msgs::Path pathMessage;
+		if (this->bestCandidateIndex_ < 0 ||
+			this->bestCandidateIndex_ >= static_cast<int>(this->candidateRawPaths_.size())){
+			return pathMessage;
+		}
+		const auto& path = this->candidateRawPaths_[this->bestCandidateIndex_];
+		for (size_t i=0; i<path.size(); ++i){
+			geometry_msgs::PoseStamped pose;
+			pose.pose.position.x = path[i]->pos(0);
+			pose.pose.position.y = path[i]->pos(1);
+			pose.pose.position.z = path[i]->pos(2);
+			double yaw = path[i]->getBestYaw();
+			if (i+1 < path.size()){
+				const Eigen::Vector3d diff = path[i+1]->pos - path[i]->pos;
+				yaw = std::atan2(diff(1), diff(0));
+			}
+			pose.pose.orientation = globalPlanner::quaternion_from_rpy(0, 0, yaw);
+			pathMessage.poses.push_back(pose);
+		}
+		return pathMessage;
+	}
+
 	bool DEP::sensorRangeCondition(const shared_ptr<PRM::Node>& n1, const shared_ptr<PRM::Node>& n2){
 		Eigen::Vector3d direction = n2->pos - n1->pos;
 		Eigen::Vector3d projection;
@@ -856,6 +879,7 @@ namespace globalPlanner{
 			}
 		}
 		candidatePaths.clear();
+		this->candidateRawPaths_.clear();
 		if (start->adjNodes.empty()) return false;
 		std::unordered_set<std::shared_ptr<PRM::Node>> attempted;
 		for (std::shared_ptr<PRM::Node> goal : goalCandidates){
@@ -869,6 +893,7 @@ namespace globalPlanner{
 			}
 			std::vector<std::shared_ptr<PRM::Node>> pathSc;
 			this->shortcutPath(path, pathSc);
+			this->candidateRawPaths_.push_back(path);
 			candidatePaths.push_back(pathSc);
 		}
 		if (findPath) return true;
@@ -904,6 +929,7 @@ namespace globalPlanner{
 			std::vector<std::shared_ptr<PRM::Node>> pathSc;
 			this->shortcutPath(path, pathSc);
 			if (pathSc.size() < 2) continue;
+			this->candidateRawPaths_.push_back(path);
 			candidatePaths.push_back(pathSc);
 			findPath = true;
 			++selected;
@@ -918,6 +944,7 @@ namespace globalPlanner{
 	void DEP::findBestPath(const std::vector<std::vector<std::shared_ptr<PRM::Node>>>& candidatePaths, std::vector<std::shared_ptr<PRM::Node>>& bestPath){
 		// find path highest unknown
 		bestPath.clear();
+		this->bestCandidateIndex_ = -1;
 		this->candidateLegacyMetrics_.clear();
 		this->candidateLegacyMetrics_.reserve(candidatePaths.size());
 		double highestScore = -1;
@@ -972,6 +999,7 @@ namespace globalPlanner{
 				highestScore = score;
 				bestPath = path;
 				this->bestPathGain_ = unknownVoxel;
+				this->bestCandidateIndex_ = n;
 			}
 		}
 		if (highestScore == 0){

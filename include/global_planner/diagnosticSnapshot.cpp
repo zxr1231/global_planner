@@ -192,7 +192,22 @@ namespace globalPlanner {
 					<< ", \"estimated_time\": " << metrics.estimatedTime
 					<< ", \"score\": " << metrics.score << "}";
 			}
-			graph << ", \"waypoints\": [";
+			graph << ", \"raw_waypoints\": [";
+			if (p < this->candidateRawPaths_.size()){
+				const auto& rawPath = this->candidateRawPaths_[p];
+				for (size_t i = 0; i < rawPath.size(); ++i){
+					if (i) graph << ", ";
+					double yaw = rawPath[i]->getBestYaw();
+					if (i + 1 < rawPath.size()){
+						const Eigen::Vector3d diff = rawPath[i + 1]->pos - rawPath[i]->pos;
+						yaw = std::atan2(diff(1), diff(0));
+					}
+					graph << "{\"position\": [" << rawPath[i]->pos(0) << ", "
+						<< rawPath[i]->pos(1) << ", " << rawPath[i]->pos(2)
+						<< "], \"yaw\": " << yaw << "}";
+				}
+			}
+			graph << "], \"waypoints\": [";
 			const auto& path = this->candidatePaths_[p];
 			for (size_t i = 0; i < path.size(); ++i){
 				if (i) graph << ", ";
