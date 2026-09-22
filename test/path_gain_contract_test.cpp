@@ -17,7 +17,7 @@ TEST(PathGainContract, ExposesSelectionSemantics){
 	EXPECT_TRUE(globalPlanner::requestsUniqueSelection(PathGainMode::UNIQUE_ONLINE));
 }
 
-TEST(PathGainContract, FailsClosedBeforeEvaluatorImplementation){
+TEST(PathGainContract, FailsClosedWhenRequestedCapabilityIsUnavailable){
 	EXPECT_NO_THROW(globalPlanner::validatePathGainContract(1, PathGainMode::LEGACY, 0.25, false));
 	EXPECT_THROW(globalPlanner::validatePathGainContract(2, PathGainMode::LEGACY, 0.25, false),
 		std::invalid_argument);
@@ -26,9 +26,11 @@ TEST(PathGainContract, FailsClosedBeforeEvaluatorImplementation){
 	EXPECT_THROW(globalPlanner::validatePathGainContract(
 		1, PathGainMode::UNIQUE_SHADOW, 0.25, false), std::logic_error);
 	EXPECT_THROW(globalPlanner::validatePathGainContract(
-		1, PathGainMode::UNIQUE_ONLINE, 0.25, false), std::logic_error);
+		1, PathGainMode::UNIQUE_ONLINE, 0.25, true, false), std::logic_error);
 	EXPECT_NO_THROW(globalPlanner::validatePathGainContract(
 		1, PathGainMode::UNIQUE_SHADOW, 0.25, true));
+	EXPECT_NO_THROW(globalPlanner::validatePathGainContract(
+		1, PathGainMode::UNIQUE_ONLINE, 0.25, true, true));
 }
 
 int main(int argc, char** argv){

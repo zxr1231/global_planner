@@ -13,6 +13,7 @@
 #include <global_planner/PRMKDTree.h>
 #include <global_planner/utils.h>
 #include <global_planner/pathGainContract.h>
+#include <global_planner/pathGainEvaluator.h>
 #include <opencv2/opencv.hpp>
 #include <chrono>
 
@@ -43,11 +44,12 @@ namespace globalPlanner{
 		bool uniqueEvaluatorAvailable = false;
 		int legacySelectedCandidate = -1;
 		int uniqueSelectedCandidate = -1;
-		int selectedRawGain = -1;
-		int selectedUniqueGain = -1;
+		int64_t selectedRawGain = -1;
+		int64_t selectedUniqueGain = -1;
 		double selectedDuplicateRatio = -1.0;
 		double uniqueEvaluationMs = -1.0;
-		double uniqueScoreMargin = 0.0;
+		uint64_t uniqueMapVersion = 0;
+		double uniqueScoreMargin = -1.0;
 		int uniqueTop1Changed = -1;
 	};
 
@@ -112,7 +114,8 @@ namespace globalPlanner{
 		int pathGainSchemaVersion_ = PATH_GAIN_SCHEMA_VERSION;
 		PathGainMode pathGainMode_ = PathGainMode::LEGACY;
 		double pathGainSampleSpacing_ = 0.25;
-		bool uniqueGainEvaluatorAvailable_ = false;
+		bool uniqueGainEvaluatorAvailable_ = true;
+		bool uniqueGainOnlineAvailable_ = false;
 		bool diagnosticSnapshotEnabled_ = false;
 		std::string diagnosticSnapshotDir_;
 		int diagnosticSnapshotStride_ = 1;
@@ -130,6 +133,7 @@ namespace globalPlanner{
 		std::vector<std::vector<std::shared_ptr<PRM::Node>>> candidateRawPaths_;
 		std::vector<std::vector<std::shared_ptr<PRM::Node>>> candidatePaths_;
 		std::vector<DEPPathLegacyMetrics> candidateLegacyMetrics_;
+		std::vector<PathGainEvaluation> candidateUniqueMetrics_;
 		std::vector<std::shared_ptr<PRM::Node>> bestPath_;
 		std::vector<std::pair<Eigen::Vector3d, double>> frontierPointPairs_;
 		int bestPathGain_ = -1;
@@ -168,6 +172,7 @@ namespace globalPlanner{
 		void getBestViewCandidates(std::vector<std::shared_ptr<PRM::Node>>& goalCandidates);
 		bool findCandidatePath(const std::vector<std::shared_ptr<PRM::Node>>& goalCandidates,  std::vector<std::vector<std::shared_ptr<PRM::Node>>>& candidatePaths);
 		void findBestPath(const std::vector<std::vector<std::shared_ptr<PRM::Node>>>& candidatePaths, std::vector<std::shared_ptr<PRM::Node>>& bestPath);
+		void evaluateUniquePathGain(const std::vector<std::vector<std::shared_ptr<PRM::Node>>>& candidatePaths);
 		
 
 		// callback functions

@@ -44,7 +44,8 @@ namespace globalPlanner{
 		try{
 			this->pathGainMode_ = parsePathGainMode(configuredGainMode);
 			validatePathGainContract(this->pathGainSchemaVersion_, this->pathGainMode_,
-				this->pathGainSampleSpacing_, this->uniqueGainEvaluatorAvailable_);
+				this->pathGainSampleSpacing_, this->uniqueGainEvaluatorAvailable_,
+				this->uniqueGainOnlineAvailable_);
 		}
 		catch (const std::exception& error){
 			ROS_FATAL("[DEP][I1] Invalid path gain configuration: %s", error.what());
@@ -349,9 +350,12 @@ namespace globalPlanner{
 		this->lastPlanningMetrics_.gainSchemaVersion = this->pathGainSchemaVersion_;
 		this->lastPlanningMetrics_.configuredGainMode = pathGainModeName(this->pathGainMode_);
 		this->lastPlanningMetrics_.selectionGainMode = "legacy";
-		this->lastPlanningMetrics_.uniqueEvaluationStatus = "disabled_by_legacy_mode";
+		this->lastPlanningMetrics_.uniqueEvaluationStatus =
+			this->pathGainMode_ == PathGainMode::UNIQUE_SHADOW ? "not_evaluated" :
+			"disabled_by_legacy_mode";
 		this->lastPlanningMetrics_.gainSampleSpacing = this->pathGainSampleSpacing_;
 		this->lastPlanningMetrics_.uniqueEvaluatorAvailable = this->uniqueGainEvaluatorAvailable_;
+		this->candidateUniqueMetrics_.clear();
 		this->bestPathGain_ = -1;
 		if (not this->odomReceived_){
 			this->lastPlanningMetrics_.totalMs = elapsedMs(totalStart);
@@ -416,6 +420,9 @@ namespace globalPlanner{
 		this->lastPlanningMetrics_.pathScoringMs = elapsedMs(stageStart);
 		this->lastPlanningMetrics_.bestPathGain = this->bestPathGain_;
 		this->lastPlanningMetrics_.legacySelectedCandidate = this->bestCandidateIndex_;
+		if (this->pathGainMode_ == PathGainMode::UNIQUE_SHADOW){
+			this->evaluateUniquePathGain(this->candidatePaths_);
+		}
 		this->lastPlanningMetrics_.success = !this->bestPath_.empty();
 		this->lastPlanningMetrics_.totalMs = elapsedMs(totalStart);
 		if (this->diagnosticSnapshotEnabled_ &&
@@ -1031,6 +1038,88 @@ namespace globalPlanner{
 		if (highestScore == 0){
 			cout << "[DEP]: Current score is 0. The exploration might complete." << endl;
 		}
+	}
+
+	void DEP::evaluateUniquePathGain(
+			const std::vector<std::vector<std::shared_ptr<PRM::Node>>>& candidatePaths){
+		using Clock = std::chrono::steady_clock;
+		const auto started = Clock::now();
+		this->candidateUniqueMetrics_.assign(candidatePaths.size(), PathGainEvaluation());
+		this->lastPlanningMetrics_.uniqueEvaluationStatus = "evaluating";
+		if (!this->map_){
+			this->lastPlanningMetrics_.uniqueEvaluationStatus = "map_unavailable";
+			return;
+		}
+		try{
+			const mapManager::OccupancyMapSnapshot snapshot = this->map_->captureSnapshot();
+			PathGainVisibilityConfig config;
+			config.horizontalFov = this->horizontalFOV_;
+			config.verticalFov = this->verticalFOV_;
+			config.dmax = this->dmax_;
+			config.planningMin = this->globalRegionMin_;
+			config.planningMax = this->globalRegionMax_;
+			PathGainEvaluator evaluator(snapshot, config);
+			double bestUtility = -1.0;
+			double secondUtility = -1.0;
+			int uniqueBest = -1;
+			for (size_t candidateIndex=0; candidateIndex<candidatePaths.size(); ++candidateIndex){
+				const auto& path = candidatePaths[candidateIndex];
+				if (path.empty()) continue;
+				std::vector<PathGainWaypoint> waypoints;
+				waypoints.reserve(path.size());
+				for (size_t index=0; index<path.size(); ++index){
+					double yaw = path[index]->getBestYaw();
+					if (index+1<path.size()){
+						const Eigen::Vector3d delta = path[index+1]->pos-path[index]->pos;
+						yaw = std::atan2(delta(1),delta(0));
+					}
+					waypoints.push_back({path[index]->pos,yaw});
+				}
+				const double estimatedTime = candidateIndex<this->candidateLegacyMetrics_.size() ?
+					this->candidateLegacyMetrics_[candidateIndex].estimatedTime : 0.0;
+				PathGainEvaluation evaluation = evaluator.evaluate(waypoints,
+					this->pathGainSampleSpacing_, estimatedTime, snapshot.version);
+				this->candidateUniqueMetrics_[candidateIndex] = evaluation;
+				if (!evaluation.valid) continue;
+				if (evaluation.uniqueUtility > bestUtility){
+					secondUtility = bestUtility;
+					bestUtility = evaluation.uniqueUtility;
+					uniqueBest = candidateIndex;
+				}
+				else if (evaluation.uniqueUtility > secondUtility){
+					secondUtility = evaluation.uniqueUtility;
+				}
+			}
+			this->lastPlanningMetrics_.uniqueMapVersion = snapshot.version;
+			if (uniqueBest < 0){
+				this->lastPlanningMetrics_.uniqueEvaluationStatus = "no_valid_candidate";
+			}
+			else{
+				this->lastPlanningMetrics_.uniqueEvaluationStatus = "valid";
+				this->lastPlanningMetrics_.uniqueSelectedCandidate = uniqueBest;
+				this->lastPlanningMetrics_.uniqueTop1Changed =
+					(uniqueBest != this->bestCandidateIndex_) ? 1 : 0;
+				this->lastPlanningMetrics_.uniqueScoreMargin = secondUtility >= 0.0 ?
+					bestUtility-secondUtility : bestUtility;
+				if (this->bestCandidateIndex_ >= 0 &&
+					this->bestCandidateIndex_ < static_cast<int>(this->candidateUniqueMetrics_.size())){
+					const PathGainEvaluation& selected =
+						this->candidateUniqueMetrics_[this->bestCandidateIndex_];
+					if (selected.valid){
+						this->lastPlanningMetrics_.selectedRawGain = selected.rawGain;
+						this->lastPlanningMetrics_.selectedUniqueGain = selected.uniqueGain;
+						this->lastPlanningMetrics_.selectedDuplicateRatio = selected.duplicateRatio;
+					}
+				}
+			}
+		}
+		catch (const std::exception&){
+			this->candidateUniqueMetrics_.assign(candidatePaths.size(), PathGainEvaluation());
+			this->lastPlanningMetrics_.uniqueEvaluationStatus = "evaluation_error";
+			this->lastPlanningMetrics_.gainFallbackReason = "evaluation_exception";
+		}
+		this->lastPlanningMetrics_.uniqueEvaluationMs =
+			std::chrono::duration<double,std::milli>(Clock::now()-started).count();
 	}
 
 

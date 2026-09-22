@@ -40,7 +40,8 @@ inline bool requestsUniqueSelection(PathGainMode mode){
 }
 
 inline void validatePathGainContract(int schemaVersion, PathGainMode mode,
-									 double sampleSpacing, bool uniqueEvaluatorAvailable){
+									 double sampleSpacing, bool uniqueEvaluatorAvailable,
+									 bool uniqueOnlineAvailable = false){
 	if (schemaVersion != PATH_GAIN_SCHEMA_VERSION){
 		throw std::invalid_argument("unsupported path gain schema version");
 	}
@@ -49,6 +50,9 @@ inline void validatePathGainContract(int schemaVersion, PathGainMode mode,
 	}
 	if (requestsUniqueEvaluation(mode) && !uniqueEvaluatorAvailable){
 		throw std::logic_error("requested unique path gain mode is declared but not implemented");
+	}
+	if (requestsUniqueSelection(mode) && !uniqueOnlineAvailable){
+		throw std::logic_error("unique online selection is not enabled at this phase");
 	}
 }
 

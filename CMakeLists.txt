@@ -132,6 +132,7 @@ include_directories(
 add_library(${PROJECT_NAME} src/globalPlannerLib.cpp
                             include/${PROJECT_NAME}/returnHome.cpp
 							include/${PROJECT_NAME}/diagnosticSnapshot.cpp
+							include/${PROJECT_NAME}/pathGainEvaluator.cpp
                             include/${PROJECT_NAME}/PRMKDTree.cpp
                             include/${PROJECT_NAME}/dep.cpp)
 
@@ -228,6 +229,10 @@ install(DIRECTORY include/${PROJECT_NAME}/
 ## Add gtest based cpp test target and link libraries
 if(CATKIN_ENABLE_TESTING)
   catkin_add_gtest(path_gain_contract_test test/path_gain_contract_test.cpp)
+  catkin_add_gtest(path_gain_evaluator_test test/path_gain_evaluator_test.cpp)
+  if(TARGET path_gain_evaluator_test)
+    target_link_libraries(path_gain_evaluator_test ${PROJECT_NAME} ${catkin_LIBRARIES})
+  endif()
 endif()
 # if(TARGET ${PROJECT_NAME}-test)
 #   target_link_libraries(${PROJECT_NAME}-test ${PROJECT_NAME})

@@ -167,7 +167,9 @@ namespace globalPlanner {
 			<< this->pathGainSampleSpacing_
 			<< ", \"unique_evaluator_available\": "
 			<< (this->uniqueGainEvaluatorAvailable_ ? "true" : "false")
-			<< ", \"completion_gain_mode\": \"legacy\"},\n";
+			<< ", \"unique_evaluation_status\": \""
+			<< this->lastPlanningMetrics_.uniqueEvaluationStatus
+			<< "\", \"completion_gain_mode\": \"legacy\"},\n";
 		graph << "  \"planning_region\": {\"min\": [" << this->globalRegionMin_(0) << ", "
 			<< this->globalRegionMin_(1) << ", " << this->globalRegionMin_(2) << "], \"max\": ["
 			<< this->globalRegionMax_(0) << ", " << this->globalRegionMax_(1) << ", "
@@ -210,6 +212,23 @@ namespace globalPlanner {
 					<< ", \"yaw_distance\": " << metrics.yawDistance
 					<< ", \"estimated_time\": " << metrics.estimatedTime
 					<< ", \"score\": " << metrics.score << "}";
+			}
+			if (p < this->candidateUniqueMetrics_.size()){
+				const auto& metrics = this->candidateUniqueMetrics_[p];
+				graph << ", \"unique_metrics\": {\"valid\": " << (metrics.valid ? "true" : "false")
+					<< ", \"map_version\": " << metrics.mapVersion
+					<< ", \"sample_count\": " << metrics.sampleCount
+					<< ", \"raw_gain\": " << metrics.rawGain
+					<< ", \"unique_gain\": " << metrics.uniqueGain
+					<< ", \"duplicate_ratio\": " << metrics.duplicateRatio
+					<< ", \"estimated_time\": " << metrics.estimatedTime
+					<< ", \"unique_utility\": " << metrics.uniqueUtility
+					<< ", \"marginal_gains\": [";
+				for (size_t marginal=0; marginal<metrics.marginalGains.size(); ++marginal){
+					if (marginal) graph << ", ";
+					graph << metrics.marginalGains[marginal];
+				}
+				graph << "]}";
 			}
 			graph << ", \"raw_waypoints\": [";
 			if (p < this->candidateRawPaths_.size()){
