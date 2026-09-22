@@ -17,6 +17,8 @@ find_package(catkin REQUIRED COMPONENTS
   map_manager
 )
 find_package(OpenCV REQUIRED)
+find_package(PkgConfig REQUIRED)
+pkg_check_modules(JSONCPP REQUIRED jsoncpp)
 
 ## System dependencies are found with CMake's conventions
 # find_package(Boost REQUIRED COMPONENTS system)
@@ -123,6 +125,7 @@ catkin_package(
 include_directories(
   include
   ${catkin_INCLUDE_DIRS}
+  ${JSONCPP_INCLUDE_DIRS}
 )
 
 ## Declare a C++ library
@@ -233,6 +236,8 @@ if(CATKIN_ENABLE_TESTING)
   if(TARGET path_gain_evaluator_test)
     target_link_libraries(path_gain_evaluator_test ${PROJECT_NAME} ${catkin_LIBRARIES})
   endif()
+  add_executable(path_gain_fixture_runner test/path_gain_fixture_runner.cpp)
+  target_link_libraries(path_gain_fixture_runner ${PROJECT_NAME} ${catkin_LIBRARIES} ${JSONCPP_LIBRARIES})
 endif()
 # if(TARGET ${PROJECT_NAME}-test)
 #   target_link_libraries(${PROJECT_NAME}-test ${PROJECT_NAME})

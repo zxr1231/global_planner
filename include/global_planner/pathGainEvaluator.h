@@ -36,6 +36,7 @@ struct PathGainEvaluation{
 	uint64_t rawGain = 0;
 	uint64_t uniqueGain = 0;
 	std::vector<uint64_t> marginalGains;
+	std::vector<uint32_t> uniqueAddresses;
 	double duplicateRatio = 0.0;
 	double estimatedTime = 0.0;
 	double uniqueUtility = 0.0;

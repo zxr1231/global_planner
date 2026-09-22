@@ -78,6 +78,41 @@ TEST(PathGainEvaluator, FailsClosedOnExpectedVersionMismatch){
 	EXPECT_THROW(evaluator.samplePath(path,0.0),std::invalid_argument);
 }
 
+TEST(PathGainEvaluator, ClipsPlanningRegionAndHandlesYawWrap){
+	auto snapshot = makeSnapshot();
+	snapshot.occupancy[address(Eigen::Vector3i(0,3,1))] = -2.0;
+	snapshot.occupancy[address(Eigen::Vector3i(2,3,1))] = -2.0;
+	auto limited = config();
+	limited.planningMin(0)=1.0;
+	globalPlanner::PathGainEvaluator evaluator(snapshot,limited);
+	auto visible=evaluator.visibleUnknown(Eigen::Vector3d(1.5,3.5,1.5),M_PI-0.01);
+	EXPECT_EQ(visible.count(address(Eigen::Vector3i(0,3,1))),0u);
+	EXPECT_EQ(visible.count(address(Eigen::Vector3i(2,3,1))),0u);
+	visible=evaluator.visibleUnknown(Eigen::Vector3d(1.5,3.5,1.5),-0.01);
+	EXPECT_EQ(visible.count(address(Eigen::Vector3i(2,3,1))),1u);
+	globalPlanner::PathGainEvaluator fullRegion(snapshot,config());
+	visible=fullRegion.visibleUnknown(Eigen::Vector3d(1.5,3.5,1.5),-M_PI+0.01);
+	EXPECT_EQ(visible.count(address(Eigen::Vector3i(0,3,1))),1u);
+}
+
+TEST(PathGainEvaluator, PreservesTerminalYawAcrossZeroLengthSegment){
+	auto snapshot=makeSnapshot();
+	globalPlanner::PathGainEvaluator evaluator(snapshot,config());
+	std::vector<globalPlanner::PathGainWaypoint> path={
+		{Eigen::Vector3d(1.5,3.5,1.5),0.0},
+		{Eigen::Vector3d(1.5,3.5,1.5),0.5}};
+	const auto samples=evaluator.samplePath(path,0.25);
+	ASSERT_EQ(samples.size(),2u);
+	EXPECT_DOUBLE_EQ(samples.front().yaw,0.0);
+	EXPECT_DOUBLE_EQ(samples.back().yaw,0.5);
+}
+
+TEST(PathGainEvaluator, RejectsMalformedSnapshot){
+	auto snapshot=makeSnapshot();
+	snapshot.inflated.pop_back();
+	EXPECT_THROW(globalPlanner::PathGainEvaluator(snapshot,config()),std::invalid_argument);
+}
+
 int main(int argc,char** argv){
 	testing::InitGoogleTest(&argc,argv);
 	return RUN_ALL_TESTS();

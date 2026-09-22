@@ -154,6 +154,8 @@ PathGainEvaluation PathGainEvaluator::evaluate(const std::vector<PathGainWaypoin
 	}
 	result.sampleCount = samples.size();
 	result.uniqueGain = history.size();
+	result.uniqueAddresses.assign(history.begin(),history.end());
+	std::sort(result.uniqueAddresses.begin(),result.uniqueAddresses.end());
 	result.duplicateRatio = result.rawGain == 0 ? 0.0 :
 		1.0-static_cast<double>(result.uniqueGain)/result.rawGain;
 	result.uniqueUtility = estimatedTime > 1e-12 ? result.uniqueGain/estimatedTime : 0.0;
