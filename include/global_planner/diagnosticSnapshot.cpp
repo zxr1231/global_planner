@@ -161,6 +161,13 @@ namespace globalPlanner {
 			<< ", \"vertical_fov\": " << this->verticalFOV_ << ", \"dmin\": " << this->dmin_
 			<< ", \"dmax\": " << this->dmax_ << ", \"yaw_samples\": " << this->yaws_.size()
 			<< ", \"visibility_model\": \"legacy_inflated_occupied_line\"},\n";
+		graph << "  \"path_gain_contract\": {\"schema_version\": " << this->pathGainSchemaVersion_
+			<< ", \"configured_mode\": \"" << pathGainModeName(this->pathGainMode_)
+			<< "\", \"selection_mode\": \"legacy\", \"sample_spacing\": "
+			<< this->pathGainSampleSpacing_
+			<< ", \"unique_evaluator_available\": "
+			<< (this->uniqueGainEvaluatorAvailable_ ? "true" : "false")
+			<< ", \"completion_gain_mode\": \"legacy\"},\n";
 		graph << "  \"planning_region\": {\"min\": [" << this->globalRegionMin_(0) << ", "
 			<< this->globalRegionMin_(1) << ", " << this->globalRegionMin_(2) << "], \"max\": ["
 			<< this->globalRegionMax_(0) << ", " << this->globalRegionMax_(1) << ", "

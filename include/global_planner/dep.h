@@ -12,6 +12,7 @@
 #include <nav_msgs/Path.h>
 #include <global_planner/PRMKDTree.h>
 #include <global_planner/utils.h>
+#include <global_planner/pathGainContract.h>
 #include <opencv2/opencv.hpp>
 #include <chrono>
 
@@ -33,6 +34,21 @@ namespace globalPlanner{
 		double candidateSearchMs = 0.0;
 		double pathScoringMs = 0.0;
 		double totalMs = 0.0;
+		int gainSchemaVersion = PATH_GAIN_SCHEMA_VERSION;
+		std::string configuredGainMode = "legacy";
+		std::string selectionGainMode = "legacy";
+		std::string uniqueEvaluationStatus = "disabled_by_legacy_mode";
+		std::string gainFallbackReason;
+		double gainSampleSpacing = 0.25;
+		bool uniqueEvaluatorAvailable = false;
+		int legacySelectedCandidate = -1;
+		int uniqueSelectedCandidate = -1;
+		int selectedRawGain = -1;
+		int selectedUniqueGain = -1;
+		double selectedDuplicateRatio = -1.0;
+		double uniqueEvaluationMs = -1.0;
+		double uniqueScoreMargin = 0.0;
+		int uniqueTop1Changed = -1;
 	};
 
 	struct DEPPathLegacyMetrics{
@@ -93,6 +109,10 @@ namespace globalPlanner{
 		double yawPenaltyWeight_;
 		uint32_t randomSeed_ = 1;
 		std::mt19937 rng_;
+		int pathGainSchemaVersion_ = PATH_GAIN_SCHEMA_VERSION;
+		PathGainMode pathGainMode_ = PathGainMode::LEGACY;
+		double pathGainSampleSpacing_ = 0.25;
+		bool uniqueGainEvaluatorAvailable_ = false;
 		bool diagnosticSnapshotEnabled_ = false;
 		std::string diagnosticSnapshotDir_;
 		int diagnosticSnapshotStride_ = 1;
@@ -133,6 +153,8 @@ namespace globalPlanner{
 		uint32_t getRandomSeed() const { return randomSeed_; }
 		void setRandomSeed(uint32_t seed) { randomSeed_ = seed; rng_.seed(seed); }
 		DEPPlanningMetrics getLastPlanningMetrics() const { return lastPlanningMetrics_; }
+		PathGainMode getPathGainMode() const { return pathGainMode_; }
+		double getPathGainSampleSpacing() const { return pathGainSampleSpacing_; }
 		int getBestPathGain() const { return bestPathGain_; }
 		// Configured gain threshold over the reachable roadmap, not ground-truth coverage.
 		bool reachableGainExhausted(int threshold, int& checkedNodes);

@@ -34,6 +34,25 @@ namespace globalPlanner{
 		if (configuredSeed < 0) configuredSeed = 1;
 		this->setRandomSeed(static_cast<uint32_t>(configuredSeed));
 		cout << this->hint_ << ": Random seed: " << this->randomSeed_ << endl;
+		std::string configuredGainMode = "legacy";
+		this->nh_.param(this->ns_ + "/path_gain/schema_version",
+			this->pathGainSchemaVersion_, PATH_GAIN_SCHEMA_VERSION);
+		this->nh_.param<std::string>(this->ns_ + "/path_gain/mode",
+			configuredGainMode, "legacy");
+		this->nh_.param(this->ns_ + "/path_gain/sample_spacing",
+			this->pathGainSampleSpacing_, 0.25);
+		try{
+			this->pathGainMode_ = parsePathGainMode(configuredGainMode);
+			validatePathGainContract(this->pathGainSchemaVersion_, this->pathGainMode_,
+				this->pathGainSampleSpacing_, this->uniqueGainEvaluatorAvailable_);
+		}
+		catch (const std::exception& error){
+			ROS_FATAL("[DEP][I1] Invalid path gain configuration: %s", error.what());
+			throw;
+		}
+		cout << this->hint_ << ": Path gain schema/mode/sample spacing: "
+			 << this->pathGainSchemaVersion_ << " / " << pathGainModeName(this->pathGainMode_)
+			 << " / " << this->pathGainSampleSpacing_ << " m" << endl;
 		this->nh_.param(this->ns_ + "/diagnostics/snapshot_enabled", this->diagnosticSnapshotEnabled_, false);
 		this->nh_.param<std::string>(this->ns_ + "/diagnostics/snapshot_directory",
 			this->diagnosticSnapshotDir_, "/tmp/cerlab_r1_snapshots");
@@ -327,6 +346,12 @@ namespace globalPlanner{
 		};
 		this->lastPlanningMetrics_ = DEPPlanningMetrics();
 		this->lastPlanningMetrics_.sequence = ++this->planningSequence_;
+		this->lastPlanningMetrics_.gainSchemaVersion = this->pathGainSchemaVersion_;
+		this->lastPlanningMetrics_.configuredGainMode = pathGainModeName(this->pathGainMode_);
+		this->lastPlanningMetrics_.selectionGainMode = "legacy";
+		this->lastPlanningMetrics_.uniqueEvaluationStatus = "disabled_by_legacy_mode";
+		this->lastPlanningMetrics_.gainSampleSpacing = this->pathGainSampleSpacing_;
+		this->lastPlanningMetrics_.uniqueEvaluatorAvailable = this->uniqueGainEvaluatorAvailable_;
 		this->bestPathGain_ = -1;
 		if (not this->odomReceived_){
 			this->lastPlanningMetrics_.totalMs = elapsedMs(totalStart);
@@ -390,6 +415,7 @@ namespace globalPlanner{
 		this->findBestPath(this->candidatePaths_, this->bestPath_);
 		this->lastPlanningMetrics_.pathScoringMs = elapsedMs(stageStart);
 		this->lastPlanningMetrics_.bestPathGain = this->bestPathGain_;
+		this->lastPlanningMetrics_.legacySelectedCandidate = this->bestCandidateIndex_;
 		this->lastPlanningMetrics_.success = !this->bestPath_.empty();
 		this->lastPlanningMetrics_.totalMs = elapsedMs(totalStart);
 		if (this->diagnosticSnapshotEnabled_ &&
