@@ -164,6 +164,9 @@ namespace globalPlanner{
 		double calculatePathLength(const std::vector<shared_ptr<PRM::Node>>& path);
 		void shortcutPath(const std::vector<std::shared_ptr<PRM::Node>>& path, std::vector<std::shared_ptr<PRM::Node>>& pathSc);
 		bool exportDiagnosticSnapshot();
+		bool exportExecutionDiagnosticSnapshot(uint64_t executionSequence);
+		bool exportDiagnosticSnapshotNamed(const std::string& prefix, uint64_t sequence,
+								   const std::string& captureKind);
 		int weightedSample(const std::vector<double>& weights);
 		double sampleUniform(double min, double max);
 		std::shared_ptr<PRM::Node> sampleFrontierPoint(const std::vector<double>& sampleWeights);

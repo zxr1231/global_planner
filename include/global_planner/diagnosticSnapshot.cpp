@@ -58,6 +58,16 @@ namespace {
 
 namespace globalPlanner {
 	bool DEP::exportDiagnosticSnapshot(){
+		return this->exportDiagnosticSnapshotNamed("snapshot", this->planningSequence_, "global_plan");
+	}
+
+	bool DEP::exportExecutionDiagnosticSnapshot(uint64_t executionSequence){
+		if (!this->diagnosticSnapshotEnabled_) return false;
+		return this->exportDiagnosticSnapshotNamed("execution", executionSequence, "execution_start");
+	}
+
+	bool DEP::exportDiagnosticSnapshotNamed(const std::string& prefix, uint64_t sequence,
+										 const std::string& captureKind){
 		if (!this->map_ || this->diagnosticSnapshotDir_.empty()) return false;
 		if (!makeDirectories(this->diagnosticSnapshotDir_)){
 			ROS_ERROR("[DEP][R1] Cannot create snapshot root: %s", this->diagnosticSnapshotDir_.c_str());
@@ -65,7 +75,7 @@ namespace globalPlanner {
 		}
 
 		std::ostringstream name;
-		name << "snapshot_" << std::setw(6) << std::setfill('0') << this->planningSequence_;
+		name << prefix << "_" << std::setw(6) << std::setfill('0') << sequence;
 		const std::string finalDir = this->diagnosticSnapshotDir_ + "/" + name.str();
 		const std::string tempDir = finalDir + ".tmp";
 		struct stat info;
@@ -140,7 +150,9 @@ namespace globalPlanner {
 		std::ofstream graph(graphPath.c_str(), std::ios::trunc);
 		graph << std::setprecision(17);
 		graph << "{\n  \"schema\": \"cerlab-r1-planner-v1\",\n";
-		graph << "  \"planning_sequence\": " << this->planningSequence_ << ",\n";
+		graph << "  \"planning_sequence\": " << sequence << ",\n";
+		graph << "  \"capture_kind\": \"" << captureKind << "\",\n";
+		graph << "  \"global_planning_sequence\": " << this->planningSequence_ << ",\n";
 		graph << "  \"random_seed\": " << this->randomSeed_ << ",\n";
 		graph << "  \"map_version\": " << mapSnapshot.version << ",\n";
 		graph << "  \"vehicle\": {\"position\": [" << this->position_(0) << ", " << this->position_(1)
@@ -233,7 +245,8 @@ namespace globalPlanner {
 		std::ofstream manifest(manifestPath.c_str(), std::ios::trunc);
 		manifest << "{\n  \"schema\": \"cerlab-r1-snapshot-v1\",\n"
 			<< "  \"complete\": true,\n"
-			<< "  \"planning_sequence\": " << this->planningSequence_ << ",\n"
+			<< "  \"planning_sequence\": " << sequence << ",\n"
+			<< "  \"capture_kind\": \"" << captureKind << "\",\n"
 			<< "  \"map_version\": " << mapSnapshot.version << ",\n"
 			<< "  \"map_file\": \"map.bin\",\n"
 			<< "  \"map_fnv1a64\": \"" << hex64(fnv1a64(mapPath)) << "\",\n"
