@@ -420,7 +420,8 @@ namespace globalPlanner{
 		this->lastPlanningMetrics_.pathScoringMs = elapsedMs(stageStart);
 		this->lastPlanningMetrics_.bestPathGain = this->bestPathGain_;
 		this->lastPlanningMetrics_.legacySelectedCandidate = this->bestCandidateIndex_;
-		if (this->pathGainMode_ == PathGainMode::UNIQUE_SHADOW){
+		if (this->pathGainMode_ == PathGainMode::UNIQUE_SHADOW ||
+			this->pathGainMode_ == PathGainMode::UNIQUE_ONLINE){
 			this->evaluateUniquePathGain(this->candidatePaths_);
 		}
 		this->lastPlanningMetrics_.success = !this->bestPath_.empty();
@@ -1048,6 +1049,10 @@ namespace globalPlanner{
 		this->lastPlanningMetrics_.uniqueEvaluationStatus = "evaluating";
 		if (!this->map_){
 			this->lastPlanningMetrics_.uniqueEvaluationStatus = "map_unavailable";
+			if (this->pathGainMode_ == PathGainMode::UNIQUE_ONLINE)
+				this->lastPlanningMetrics_.gainFallbackReason = "map_unavailable";
+			this->lastPlanningMetrics_.uniqueEvaluationMs =
+				std::chrono::duration<double,std::milli>(Clock::now()-started).count();
 			return;
 		}
 		try{
@@ -1059,9 +1064,6 @@ namespace globalPlanner{
 			config.planningMin = this->globalRegionMin_;
 			config.planningMax = this->globalRegionMax_;
 			PathGainEvaluator evaluator(snapshot, config);
-			double bestUtility = -1.0;
-			double secondUtility = -1.0;
-			int uniqueBest = -1;
 			for (size_t candidateIndex=0; candidateIndex<candidatePaths.size(); ++candidateIndex){
 				const auto& path = candidatePaths[candidateIndex];
 				if (path.empty()) continue;
@@ -1080,27 +1082,31 @@ namespace globalPlanner{
 				PathGainEvaluation evaluation = evaluator.evaluate(waypoints,
 					this->pathGainSampleSpacing_, estimatedTime, snapshot.version);
 				this->candidateUniqueMetrics_[candidateIndex] = evaluation;
-				if (!evaluation.valid) continue;
-				if (evaluation.uniqueUtility > bestUtility){
-					secondUtility = bestUtility;
-					bestUtility = evaluation.uniqueUtility;
-					uniqueBest = candidateIndex;
-				}
-				else if (evaluation.uniqueUtility > secondUtility){
-					secondUtility = evaluation.uniqueUtility;
-				}
 			}
 			this->lastPlanningMetrics_.uniqueMapVersion = snapshot.version;
-			if (uniqueBest < 0){
+			const UniqueGainRanking ranking = rankUniqueCandidates(this->candidateUniqueMetrics_);
+			const PathSelectionDecision decision = decidePathSelection(this->pathGainMode_,
+				ranking,candidatePaths.size(),this->bestCandidateIndex_);
+			if (!ranking.valid){
 				this->lastPlanningMetrics_.uniqueEvaluationStatus = "no_valid_candidate";
 			}
 			else{
 				this->lastPlanningMetrics_.uniqueEvaluationStatus = "valid";
-				this->lastPlanningMetrics_.uniqueSelectedCandidate = uniqueBest;
+				this->lastPlanningMetrics_.uniqueSelectedCandidate = ranking.candidateIndex;
 				this->lastPlanningMetrics_.uniqueTop1Changed =
-					(uniqueBest != this->bestCandidateIndex_) ? 1 : 0;
-				this->lastPlanningMetrics_.uniqueScoreMargin = secondUtility >= 0.0 ?
-					bestUtility-secondUtility : bestUtility;
+					(ranking.candidateIndex != this->bestCandidateIndex_) ? 1 : 0;
+				this->lastPlanningMetrics_.uniqueScoreMargin = ranking.scoreMargin;
+			}
+			if (!decision.fallbackReason.empty())
+				this->lastPlanningMetrics_.gainFallbackReason = decision.fallbackReason;
+			if (decision.selectionMode == "unique" && decision.candidateIndex >= 0 &&
+				decision.candidateIndex < static_cast<int>(candidatePaths.size()) &&
+				!candidatePaths[decision.candidateIndex].empty()){
+				this->bestCandidateIndex_ = decision.candidateIndex;
+				this->bestPath_ = candidatePaths[decision.candidateIndex];
+				this->lastPlanningMetrics_.selectionGainMode = "unique";
+			}
+			if (ranking.valid){
 				if (this->bestCandidateIndex_ >= 0 &&
 					this->bestCandidateIndex_ < static_cast<int>(this->candidateUniqueMetrics_.size())){
 					const PathGainEvaluation& selected =

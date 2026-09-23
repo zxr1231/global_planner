@@ -113,6 +113,61 @@ TEST(PathGainEvaluator, RejectsMalformedSnapshot){
 	EXPECT_THROW(globalPlanner::PathGainEvaluator(snapshot,config()),std::invalid_argument);
 }
 
+TEST(PathGainEvaluator, RanksUniqueCandidatesAndKeepsFirstTie){
+	std::vector<globalPlanner::PathGainEvaluation> values(3);
+	for (auto& value:values) value.valid=true;
+	values[0].uniqueUtility=2.0;
+	values[1].uniqueUtility=5.0;
+	values[2].uniqueUtility=5.0;
+	const auto ranking=globalPlanner::rankUniqueCandidates(values);
+	ASSERT_TRUE(ranking.valid);
+	EXPECT_EQ(ranking.candidateIndex,1);
+	EXPECT_DOUBLE_EQ(ranking.scoreMargin,0.0);
+}
+
+TEST(PathGainEvaluator, RankingFailsClosedWithoutValidCandidate){
+	std::vector<globalPlanner::PathGainEvaluation> values(2);
+	values[0].valid=false;
+	values[1].valid=true;
+	values[1].uniqueUtility=-1.0;
+	const auto ranking=globalPlanner::rankUniqueCandidates(values);
+	EXPECT_FALSE(ranking.valid);
+	EXPECT_EQ(ranking.candidateIndex,-1);
+	EXPECT_EQ(ranking.failureReason,"no_valid_unique_candidate");
+}
+
+TEST(PathGainEvaluator, OnlineSelectionUsesUniqueAndOtherModesKeepLegacy){
+	globalPlanner::UniqueGainRanking ranking;
+	ranking.valid=true;
+	ranking.candidateIndex=2;
+	auto decision=globalPlanner::decidePathSelection(
+		globalPlanner::PathGainMode::UNIQUE_ONLINE,ranking,3,0);
+	EXPECT_EQ(decision.candidateIndex,2);
+	EXPECT_EQ(decision.selectionMode,"unique");
+	EXPECT_TRUE(decision.fallbackReason.empty());
+	decision=globalPlanner::decidePathSelection(
+		globalPlanner::PathGainMode::UNIQUE_SHADOW,ranking,3,0);
+	EXPECT_EQ(decision.candidateIndex,0);
+	EXPECT_EQ(decision.selectionMode,"legacy");
+}
+
+TEST(PathGainEvaluator, OnlineSelectionFallsBackForInvalidOrOutOfRangeRanking){
+	globalPlanner::UniqueGainRanking invalid;
+	invalid.failureReason="no_valid_unique_candidate";
+	auto decision=globalPlanner::decidePathSelection(
+		globalPlanner::PathGainMode::UNIQUE_ONLINE,invalid,3,1);
+	EXPECT_EQ(decision.candidateIndex,1);
+	EXPECT_EQ(decision.selectionMode,"legacy");
+	EXPECT_EQ(decision.fallbackReason,"no_valid_unique_candidate");
+	globalPlanner::UniqueGainRanking outside;
+	outside.valid=true;
+	outside.candidateIndex=4;
+	decision=globalPlanner::decidePathSelection(
+		globalPlanner::PathGainMode::UNIQUE_ONLINE,outside,3,1);
+	EXPECT_EQ(decision.candidateIndex,1);
+	EXPECT_EQ(decision.fallbackReason,"unique_candidate_out_of_range");
+}
+
 int main(int argc,char** argv){
 	testing::InitGoogleTest(&argc,argv);
 	return RUN_ALL_TESTS();

@@ -2,10 +2,12 @@
 #define GLOBAL_PLANNER_PATH_GAIN_EVALUATOR_H
 
 #include <map_manager/occupancyMap.h>
+#include <global_planner/pathGainContract.h>
 #include <Eigen/Eigen>
 #include <cstdint>
 #include <unordered_set>
 #include <vector>
+#include <string>
 
 namespace globalPlanner{
 
@@ -41,6 +43,24 @@ struct PathGainEvaluation{
 	double estimatedTime = 0.0;
 	double uniqueUtility = 0.0;
 };
+
+struct UniqueGainRanking{
+	bool valid = false;
+	int candidateIndex = -1;
+	double scoreMargin = -1.0;
+	std::string failureReason;
+};
+
+UniqueGainRanking rankUniqueCandidates(const std::vector<PathGainEvaluation>& evaluations);
+
+struct PathSelectionDecision{
+	int candidateIndex = -1;
+	std::string selectionMode = "legacy";
+	std::string fallbackReason;
+};
+
+PathSelectionDecision decidePathSelection(PathGainMode mode,
+		const UniqueGainRanking& ranking, size_t candidateCount, int legacyCandidateIndex);
 
 class PathGainEvaluator{
 public:

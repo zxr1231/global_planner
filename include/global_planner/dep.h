@@ -115,7 +115,7 @@ namespace globalPlanner{
 		PathGainMode pathGainMode_ = PathGainMode::LEGACY;
 		double pathGainSampleSpacing_ = 0.25;
 		bool uniqueGainEvaluatorAvailable_ = true;
-		bool uniqueGainOnlineAvailable_ = false;
+		bool uniqueGainOnlineAvailable_ = true;
 		bool diagnosticSnapshotEnabled_ = false;
 		std::string diagnosticSnapshotDir_;
 		int diagnosticSnapshotStride_ = 1;

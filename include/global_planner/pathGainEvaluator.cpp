@@ -7,6 +7,52 @@
 
 namespace globalPlanner{
 
+UniqueGainRanking rankUniqueCandidates(const std::vector<PathGainEvaluation>& evaluations){
+	UniqueGainRanking result;
+	double best = -1.0;
+	double second = -1.0;
+	for (size_t index=0; index<evaluations.size(); ++index){
+		if (!evaluations[index].valid) continue;
+		const double score = evaluations[index].uniqueUtility;
+		if (!std::isfinite(score) || score < 0.0) continue;
+		if (score > best){
+			second = best;
+			best = score;
+			result.candidateIndex = static_cast<int>(index);
+		}
+		else if (score > second){
+			second = score;
+		}
+	}
+	if (result.candidateIndex < 0){
+		result.failureReason = "no_valid_unique_candidate";
+		return result;
+	}
+	result.valid = true;
+	result.scoreMargin = second >= 0.0 ? best-second : best;
+	return result;
+}
+
+PathSelectionDecision decidePathSelection(PathGainMode mode,
+		const UniqueGainRanking& ranking, size_t candidateCount, int legacyCandidateIndex){
+	PathSelectionDecision decision;
+	decision.candidateIndex = legacyCandidateIndex;
+	if (mode != PathGainMode::UNIQUE_ONLINE) return decision;
+	if (!ranking.valid){
+		decision.fallbackReason = ranking.failureReason.empty() ?
+			"no_valid_unique_candidate" : ranking.failureReason;
+		return decision;
+	}
+	if (ranking.candidateIndex < 0 ||
+		ranking.candidateIndex >= static_cast<int>(candidateCount)){
+		decision.fallbackReason = "unique_candidate_out_of_range";
+		return decision;
+	}
+	decision.candidateIndex = ranking.candidateIndex;
+	decision.selectionMode = "unique";
+	return decision;
+}
+
 PathGainEvaluator::PathGainEvaluator(const mapManager::OccupancyMapSnapshot& snapshot,
 									 const PathGainVisibilityConfig& config)
 	: snapshot_(snapshot), config_(config){
