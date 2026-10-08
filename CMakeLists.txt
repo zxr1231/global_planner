@@ -232,6 +232,7 @@ install(DIRECTORY include/${PROJECT_NAME}/
 ## Add gtest based cpp test target and link libraries
 if(CATKIN_ENABLE_TESTING)
   catkin_add_gtest(route_search_test test/route_search_test.cpp)
+  catkin_add_gtest(route_candidates_test test/route_candidates_test.cpp)
   catkin_add_gtest(path_gain_contract_test test/path_gain_contract_test.cpp)
   catkin_add_gtest(path_gain_evaluator_test test/path_gain_evaluator_test.cpp)
   if(TARGET path_gain_evaluator_test)
