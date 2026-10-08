@@ -450,13 +450,21 @@ namespace globalPlanner{
 			routeLog["live_map_version"]=Json::UInt64(this->map_->getMapVersion());
 			bool safe=true;
 			if (this->routeSnapshot_) {
+				const auto current=this->map_->captureSnapshot();
+				PathGainVisibilityConfig visibility;
+				visibility.horizontalFov=horizontalFOV_;visibility.verticalFov=verticalFOV_;visibility.dmax=dmax_;
+				visibility.planningMin=globalRegionMin_;visibility.planningMax=globalRegionMax_;
+				RouteSnapshot validation(current,visibility,yaws_);
+				routeLog["validation_map_version"]=Json::UInt64(current.version);
+				routeLog["planning_snapshot_changed"]=(current.version!=routeSnapshot_->version);
 				for(size_t i=0;i<this->bestPath_.size();++i) {
-					if(!this->map_->isInflatedFree(this->bestPath_[i]->pos))safe=false;
-					if(i && !this->map_->isInflatedFreeLine(this->bestPath_[i-1]->pos,this->bestPath_[i]->pos))safe=false;
+					if(!validation.free(this->bestPath_[i]->pos))safe=false;
+					if(i && !validation.freeLine(this->bestPath_[i-1]->pos,this->bestPath_[i]->pos))safe=false;
 				}
 				if(!safe){this->bestPath_.clear();this->bestPathGain_=-1;this->lastPlanningMetrics_.bestPathGain=-1;}
 			}
-			routeLog["live_route_safe"]=safe;
+
+			routeLog["validation_route_safe"]=safe;
 			for(size_t i=0;i<this->candidateLegacyMetrics_.size();++i) {
 				const auto& m=this->candidateLegacyMetrics_[i];Json::Value row;
 				row["valid"]=m.valid;row["gain"]=m.gain;row["time"]=m.estimatedTime;row["score"]=m.score;

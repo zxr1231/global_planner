@@ -43,10 +43,11 @@ TEST(RouteSnapshot, CollisionUnknownBoundsAndFrozenMutationMatchRealMap) {
  globalPlanner::PathGainVisibilityConfig c;c.horizontalFov=c.verticalFov=M_PI/2;c.dmax=2;
  c.planningMin=Eigen::Vector3d(-3,-3,.7);c.planningMax=Eigen::Vector3d(3,3,1.2);
  globalPlanner::RouteSnapshot frozen(snapshot,c,{0,M_PI});
+ globalPlanner::FrozenRouteMap compatibility(snapshot);
  std::vector<Eigen::Vector3d> points={{-4.1,0,1},{-1.1,.13,.91},{2.2,0,1},{3.99,0,1},{4,0,1}};
- for(const auto& a:points){EXPECT_EQ(map->isInflatedFree(a),frozen.free(a));EXPECT_EQ(map->isUnknown(a),frozen.unknown(a));
+ for(const auto& a:points){EXPECT_EQ(map->isInflatedFree(a),frozen.free(a));EXPECT_EQ(compatibility.isInflatedFree(a),frozen.free(a));EXPECT_EQ(map->isUnknown(a),frozen.unknown(a));
   for(const auto& b:points){EXPECT_EQ(map->isInflatedFreeLine(a,b),frozen.freeLine(a,b));EXPECT_EQ(map->isInflatedOccupiedLine(a,b),frozen.occluded(a,b));}}
- map->obstacle(Eigen::Vector3d(0,0,1));EXPECT_TRUE(frozen.free(Eigen::Vector3d(0,0,1)));EXPECT_FALSE(map->isInflatedFree(Eigen::Vector3d(0,0,1)));
+ map->obstacle(Eigen::Vector3d(0,0,1));EXPECT_TRUE(compatibility.isInflatedFree(Eigen::Vector3d(0,0,1)));EXPECT_TRUE(frozen.free(Eigen::Vector3d(0,0,1)));EXPECT_FALSE(map->isInflatedFree(Eigen::Vector3d(0,0,1)));
 }
 TEST(RouteSnapshot, LegacyGainAndScoringMatchOnFrozenOffCentreInputs) {
  ros::NodeHandle nh;globalPlanner::DEP planner(nh);auto map=std::make_shared<FrozenTestMap>();
@@ -72,6 +73,7 @@ TEST(RouteSnapshot, AllControlModesReturnSafeRoutesAndAuditablePool) {
   Json::Value log;Json::CharReaderBuilder reader;std::istringstream in(planner.getLastPlanningMetrics().routeControlJson);std::string error;
   ASSERT_TRUE(Json::parseFromStream(reader,in,&log,&error));EXPECT_EQ("ready",log["status"].asString());
   EXPECT_EQ(42u,log["map_version"].asUInt64());EXPECT_EQ(1u,log["selected_count"].asUInt64());
+  for(const auto& entry:log["astar_comparisons"]){EXPECT_TRUE(entry["snapshot_matches_comparison_map"].asBool());EXPECT_NEAR(0,entry["excess_length"].asDouble(),1e-10);}
  }
 }
 int main(int argc,char** argv){ros::init(argc,argv,"i2_snapshot_checks",ros::init_options::AnonymousName);testing::InitGoogleTest(&argc,argv);return RUN_ALL_TESTS();}

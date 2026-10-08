@@ -78,16 +78,16 @@ bool DEP::findRouteControlCandidates() {
   }
   log["goal_set"]=goalLog;log["reference_pops"]=referencePops;
   if(goals.empty()){finish("no_reachable_prefiltered_goal",true);return false;}
-  // Compare the unchanged A* implementation against Dijkstra on this exported graph.
-  // Single-threaded ROS spin prevents mapping callbacks during planning; still record
-  // and verify live versions rather than treating this assumption as a cache guarantee.
+  // Planning uses a worker thread: live mapping can change during this function.
+  // Compare the unchanged A* on a frozen map wrapper, never a live read-through map.
+  auto comparisonMap=std::make_shared<FrozenRouteMap>(snapshot);
   for(Id i=0;i<graph.size();++i)for(const auto& edge:graph.neighbors(i))detached[i]->adjNodes.insert(detached[edge.to]);
   for(Id g=0;g<goals.size();++g) {
    Json::Value comparison;comparison["goal_id"]=Json::UInt64(goals[g]);
-   const uint64_t before=map_->getMapVersion();
-   auto legacy=PRM::AStar(roadmap_,detached[0],detached[goals[g]],map_);
-   const uint64_t after=map_->getMapVersion();
-   comparison["snapshot_matches_live"]=(before==snapshot.version && after==before);
+   const uint64_t before=comparisonMap->getMapVersion();
+   auto legacy=PRM::AStar(roadmap_,detached[0],detached[goals[g]],comparisonMap);
+   const uint64_t after=comparisonMap->getMapVersion();
+   comparison["snapshot_matches_comparison_map"]=(before==snapshot.version && after==before);
    comparison["found"]=!legacy.empty();comparison["reference_cost"]=references[g].cost;
    if(!legacy.empty()) {
     double cost=0;for(size_t i=1;i<legacy.size();++i)cost+=(legacy[i]->pos-legacy[i-1]->pos).norm();
@@ -95,6 +95,7 @@ bool DEP::findRouteControlCandidates() {
    }
    log["astar_comparisons"].append(comparison);
   }
+  comparisonMap.reset();
   // Avoid shared_ptr adjacency cycles in temporary nodes retained by output paths.
   for(const auto& node:detached)node->adjNodes.clear();
   std::vector<Candidate> preparedReferences;

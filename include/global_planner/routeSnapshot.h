@@ -5,6 +5,17 @@
 #include <global_planner/utils.h>
 #include <stdexcept>
 namespace globalPlanner {
+// Compatibility wrapper for unchanged A*: only existing occupancy query methods are used.
+// It owns a frozen copy; no mapping modules, subscribers or timers are initialized.
+class FrozenRouteMap final : public mapManager::occMap {
+ public:
+ explicit FrozenRouteMap(const mapManager::OccupancyMapSnapshot& s) {
+  mapRes_=s.resolution;mapSizeMin_=s.mapMin;mapSizeMax_=s.mapMax;
+  mapVoxelMin_=Eigen::Vector3i::Zero();mapVoxelMax_=s.dimensions;
+  pMinLog_=s.pMinLog;pOccLog_=s.pOccLog;mapVersion_=s.version;
+  occupancy_=s.occupancy;occupancyInflated_=s.inflated;
+ }
+};
 // Read-only view; caller owns one immutable snapshot for graph, collision and scoring.
 class RouteSnapshot {
  const mapManager::OccupancyMapSnapshot& map_;
