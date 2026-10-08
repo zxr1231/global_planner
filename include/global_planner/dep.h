@@ -16,6 +16,8 @@
 #include <global_planner/pathGainEvaluator.h>
 #include <opencv2/opencv.hpp>
 #include <chrono>
+#include <global_planner/routeSnapshot.h>
+#include <global_planner/routeCandidates.h>
 
 
 namespace globalPlanner{
@@ -40,6 +42,7 @@ namespace globalPlanner{
 		std::string selectionGainMode = "legacy";
 		std::string uniqueEvaluationStatus = "disabled_by_legacy_mode";
 		std::string gainFallbackReason;
+		std::string routeControlJson;
 		double gainSampleSpacing = 0.25;
 		bool uniqueEvaluatorAvailable = false;
 		int legacySelectedCandidate = -1;
@@ -63,6 +66,7 @@ namespace globalPlanner{
 	};
 
 	class DEP{
+		friend struct RouteControlTestAccess;
 		friend struct ReturnHomeTestAccess; // deterministic graph fixtures, no runtime test switch
 	private:
 		std::string ns_;
@@ -116,6 +120,9 @@ namespace globalPlanner{
 		double pathGainSampleSpacing_ = 0.25;
 		bool uniqueGainEvaluatorAvailable_ = true;
 		bool uniqueGainOnlineAvailable_ = true;
+		std::string routeMode_ = "historical_legacy";
+		std::shared_ptr<const mapManager::OccupancyMapSnapshot> routeSnapshot_;
+		bool findRouteControlCandidates();
 		bool diagnosticSnapshotEnabled_ = false;
 		std::string diagnosticSnapshotDir_;
 		int diagnosticSnapshotStride_ = 1;

@@ -102,6 +102,14 @@ TEST(RouteSearch, ExhaustiveOracleOnRandomDirectedGraphs) {
   }
 }
 
+TEST(RouteSearch, SuppliedReferenceRetainsOrderingAndUsesOnlyAlternativeBudget) {
+  Graph graph({{0,0,0},{1,1,0},{1,-1,0},{2,0,0}},{{0,1},{0,2},{1,3},{2,3}});
+  Budget referenceBudget;auto reference=shortest(graph,0,3,referenceBudget);
+  Budget a,b;auto expected=yen(graph,0,3,6,a);auto actual=yen(graph,0,3,6,b,&reference.path);
+  EXPECT_EQ(0u,actual.referencePops);EXPECT_EQ(a.pops,b.pops);ASSERT_EQ(expected.paths.size(),actual.paths.size());
+  for(Id i=0;i<actual.paths.size();++i)EXPECT_EQ(expected.paths[i].nodes,actual.paths[i].nodes);
+  Path invalid{{3,0},0};Budget c;EXPECT_THROW(yen(graph,0,3,6,c,&invalid),std::invalid_argument);
+}
 int main(int argc, char** argv) {
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();

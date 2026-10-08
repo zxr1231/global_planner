@@ -132,4 +132,11 @@ TEST(RouteCandidates, ShortcutOrderMatchesGreedySourceAndTieBreaking) {
   EXPECT_EQ((Sequence{0,3}),shortcut({0,1,2,3},[](Id,Id){return true;}));
   EXPECT_TRUE(shortcut({},[](Id,Id){return true;}).empty());
 }
+TEST(RouteCandidates, ReusedReferenceAvoidsWorkInsideAlternativeDeadline) {
+  auto graph=fixture();auto raw=routes(graph);Limits limits;MotionConfig motion;
+  auto reference=prepare(graph,5,{raw[0]},0,0,motion,limits,adjacency(graph));
+  auto p=prepare(graph,5,raw,0,0,motion,limits,adjacency(graph),[]{return false;},&reference.records[0]);
+  EXPECT_TRUE(p.referenceReady);EXPECT_TRUE(p.cutoff);EXPECT_EQ(1u,p.feasible.size());
+  EXPECT_EQ(reference.records[0].simplified,p.records[0].simplified);
+}
 int main(int argc,char** argv) { testing::InitGoogleTest(&argc,argv); return RUN_ALL_TESTS(); }

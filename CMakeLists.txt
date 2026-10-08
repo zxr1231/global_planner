@@ -133,6 +133,7 @@ include_directories(
 #   src/${PROJECT_NAME}/global_planner.cpp
 # )
 add_library(${PROJECT_NAME} src/globalPlannerLib.cpp
+                            include/${PROJECT_NAME}/routeControls.cpp
                             include/${PROJECT_NAME}/returnHome.cpp
 							include/${PROJECT_NAME}/diagnosticSnapshot.cpp
 							include/${PROJECT_NAME}/pathGainEvaluator.cpp
@@ -172,7 +173,7 @@ add_executable(test_dep_node src/test_dep_node.cpp)
 # target_link_libraries(${PROJECT_NAME}_node
 #   ${catkin_LIBRARIES}
 # )
-target_link_libraries(${PROJECT_NAME} ${catkin_LIBRARIES} ${OpenCV_LIBS})
+target_link_libraries(${PROJECT_NAME} ${catkin_LIBRARIES} ${OpenCV_LIBS} ${JSONCPP_LIBRARIES})
 # target_link_libraries(test_kdtree ${catkin_LIBRARIES})
 # target_link_libraries(test_prm_kdtree ${catkin_LIBRARIES} ${PROJECT_NAME} ${OpenCV_LIBS})
 # target_link_libraries(test_blob_detection ${catkin_LIBRARIES})
@@ -231,6 +232,10 @@ install(DIRECTORY include/${PROJECT_NAME}/
 
 ## Add gtest based cpp test target and link libraries
 if(CATKIN_ENABLE_TESTING)
+  catkin_add_gtest(route_snapshot_test test/route_snapshot_test.cpp)
+  if(TARGET route_snapshot_test)
+    target_link_libraries(route_snapshot_test ${PROJECT_NAME} ${catkin_LIBRARIES} ${JSONCPP_LIBRARIES})
+  endif()
   catkin_add_gtest(route_search_test test/route_search_test.cpp)
   catkin_add_gtest(route_candidates_test test/route_candidates_test.cpp)
   catkin_add_gtest(path_gain_contract_test test/path_gain_contract_test.cpp)

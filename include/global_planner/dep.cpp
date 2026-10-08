@@ -5,6 +5,7 @@
 */
 
 #include <global_planner/dep.h>
+#include <jsoncpp/json/json.h>
 #include <global_planner/PRMAstar.h>
 #include <random>
 
@@ -51,6 +52,12 @@ namespace globalPlanner{
 			ROS_FATAL("[DEP][I1] Invalid path gain configuration: %s", error.what());
 			throw;
 		}
+		this->nh_.param<std::string>(this->ns_ + "/route_controls/mode", this->routeMode_, "historical_legacy");
+		if (this->routeMode_ != "historical_legacy" && this->routeMode_ != "distance_single" &&
+			this->routeMode_ != "generic_k_shortest" && this->routeMode_ != "geometric_diverse")
+			throw std::invalid_argument("invalid I2 route mode");
+		if (this->routeMode_ != "historical_legacy" && this->pathGainMode_ == PathGainMode::UNIQUE_ONLINE)
+			throw std::invalid_argument("I2 initial controls require legacy ranking; unique_shadow is allowed");
 		cout << this->hint_ << ": Path gain schema/mode/sample spacing: "
 			 << this->pathGainSchemaVersion_ << " / " << pathGainModeName(this->pathGainMode_)
 			 << " / " << this->pathGainSampleSpacing_ << " m" << endl;
@@ -355,6 +362,7 @@ namespace globalPlanner{
 			"disabled_by_legacy_mode";
 		this->lastPlanningMetrics_.gainSampleSpacing = this->pathGainSampleSpacing_;
 		this->lastPlanningMetrics_.uniqueEvaluatorAvailable = this->uniqueGainEvaluatorAvailable_;
+		this->routeSnapshot_.reset();
 		this->candidateUniqueMetrics_.clear();
 		this->bestPathGain_ = -1;
 		if (not this->odomReceived_){
@@ -403,7 +411,16 @@ namespace globalPlanner{
 		// cout << "finish best view candidate with size: " << this->goalCandidates_.size() << endl;
 
 		stageStart = Clock::now();
-		bool findCandidatePathSuccess = this->findCandidatePath(this->goalCandidates_, this->candidatePaths_);
+		bool findCandidatePathSuccess = false;
+		if (this->routeMode_ == "historical_legacy") {
+			findCandidatePathSuccess = this->findCandidatePath(this->goalCandidates_, this->candidatePaths_);
+		} else {
+			findCandidatePathSuccess = this->findRouteControlCandidates();
+			if (!findCandidatePathSuccess) {
+				this->routeSnapshot_.reset();
+				findCandidatePathSuccess = this->findCandidatePath(this->goalCandidates_, this->candidatePaths_);
+			}
+		}
 		this->lastPlanningMetrics_.candidateSearchMs = elapsedMs(stageStart);
 		this->lastPlanningMetrics_.candidatePaths = this->candidatePaths_.size();
 		this->lastPlanningMetrics_.recoveryUsed = this->lastRecoveryUsed_;
@@ -424,6 +441,36 @@ namespace globalPlanner{
 			this->pathGainMode_ == PathGainMode::UNIQUE_ONLINE){
 			this->evaluateUniquePathGain(this->candidatePaths_);
 		}
+		if (this->routeMode_ != "historical_legacy") {
+			Json::Value routeLog; Json::CharReaderBuilder reader;
+			std::istringstream input(this->lastPlanningMetrics_.routeControlJson); std::string errors;
+			Json::parseFromStream(reader,input,&routeLog,&errors);
+			routeLog["scored_count"]=Json::UInt64(this->candidateLegacyMetrics_.size());
+			routeLog["selected_candidate"]=this->bestCandidateIndex_;
+			routeLog["live_map_version"]=Json::UInt64(this->map_->getMapVersion());
+			bool safe=true;
+			if (this->routeSnapshot_) {
+				for(size_t i=0;i<this->bestPath_.size();++i) {
+					if(!this->map_->isInflatedFree(this->bestPath_[i]->pos))safe=false;
+					if(i && !this->map_->isInflatedFreeLine(this->bestPath_[i-1]->pos,this->bestPath_[i]->pos))safe=false;
+				}
+				if(!safe){this->bestPath_.clear();this->bestPathGain_=-1;this->lastPlanningMetrics_.bestPathGain=-1;}
+			}
+			routeLog["live_route_safe"]=safe;
+			for(size_t i=0;i<this->candidateLegacyMetrics_.size();++i) {
+				const auto& m=this->candidateLegacyMetrics_[i];Json::Value row;
+				row["valid"]=m.valid;row["gain"]=m.gain;row["time"]=m.estimatedTime;row["score"]=m.score;
+				row["yaw"]=m.yawDistance;row["length"]=m.pathLength;
+				if(i<this->candidateUniqueMetrics_.size()) {
+					const auto& u=this->candidateUniqueMetrics_[i];row["unique_valid"]=u.valid;
+					row["unique_map_version"]=Json::UInt64(u.mapVersion);row["raw_gain"]=Json::UInt64(u.rawGain);
+					row["unique_gain"]=Json::UInt64(u.uniqueGain);row["duplicate_ratio"]=u.duplicateRatio;
+				}
+				routeLog["scores"].append(row);
+			}
+			Json::StreamWriterBuilder writer;writer["indentation"]="";
+			this->lastPlanningMetrics_.routeControlJson=Json::writeString(writer,routeLog);
+		}
 		this->lastPlanningMetrics_.success = !this->bestPath_.empty();
 		this->lastPlanningMetrics_.totalMs = elapsedMs(totalStart);
 		if (this->diagnosticSnapshotEnabled_ &&
@@ -435,6 +482,7 @@ namespace globalPlanner{
 		// ros::Time pathEndTime = ros::Time::now();
 		// cout << "path time: " << (pathEndTime - pathStartTime).toSec() << endl;
 		// cout << "found best path with size: " << this->bestPath_.size() << endl;
+		this->routeSnapshot_.reset();
 		return !this->bestPath_.empty();
 	}
 
@@ -1056,7 +1104,8 @@ namespace globalPlanner{
 			return;
 		}
 		try{
-			const mapManager::OccupancyMapSnapshot snapshot = this->map_->captureSnapshot();
+			const mapManager::OccupancyMapSnapshot snapshot = this->routeSnapshot_ ?
+				*this->routeSnapshot_ : this->map_->captureSnapshot();
 			PathGainVisibilityConfig config;
 			config.horizontalFov = this->horizontalFOV_;
 			config.verticalFov = this->verticalFOV_;
@@ -1249,6 +1298,13 @@ namespace globalPlanner{
 	}
 
 	int DEP::calculateUnknown(const shared_ptr<PRM::Node>& n, std::unordered_map<double, int>& yawNumVoxels){
+		if (this->routeSnapshot_) {
+			PathGainVisibilityConfig config;
+			config.horizontalFov=this->horizontalFOV_; config.verticalFov=this->verticalFOV_;
+			config.dmax=this->dmax_; config.planningMin=this->globalRegionMin_; config.planningMax=this->globalRegionMax_;
+			RouteSnapshot view(*this->routeSnapshot_,config,this->yaws_);
+			return view.gains(n->pos,yawNumVoxels);
+		}
 		for (double yaw : this->yaws_){
 			yawNumVoxels[yaw] = 0;
 		}

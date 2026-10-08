@@ -101,7 +101,7 @@ inline void motionRejections(const Motion& motion, const Motion& reference,
 inline GoalPool prepare(const Graph& graph, Id goal, const std::vector<Path>& rawPool,
                         double initialYaw, double goalYaw, const MotionConfig& config,
                         const Limits& limits, const LineCheck& freeLine,
-                        const Continue& proceed = [] { return true; }) {
+                        const Continue& proceed = [] { return true; }, const Candidate* suppliedReference = nullptr) {
   validate(config,limits);
   if(goal>=graph.size()) throw std::out_of_range("Goal ID");
   if(rawPool.size()>limits.poolPerGoal) throw std::invalid_argument("pool cap exceeded");
@@ -109,6 +109,13 @@ inline GoalPool prepare(const Graph& graph, Id goal, const std::vector<Path>& ra
   std::set<Sequence> seen;
   for(Id index=0;index<rawPool.size();++index) {
     Candidate c; c.poolIndex=index; c.raw=rawPool[index].nodes;
+    if(index==0 && suppliedReference) {
+      if(suppliedReference->raw!=c.raw || !suppliedReference->reasons.empty() || suppliedReference->simplified.empty())
+        throw std::invalid_argument("invalid prepared reference");
+      c=*suppliedReference; c.poolIndex=0; seen.insert(c.raw);
+      result.referenceReady=true; result.counts.motionFeasible=1; result.counts.postShortcutUnique=1;
+      result.feasible.push_back(0); result.records.push_back(c); continue;
+    }
     if(index && (result.cutoff || !proceed())) {
       result.cutoff=true; c.reasons.push_back("deadline"); result.records.push_back(c); continue;
     }

@@ -119,12 +119,20 @@ struct Routes {
   Stop stop = Stop::NONE;
   std::size_t referencePops = 0;
 };
-inline Routes yen(const Graph& graph, Id start, Id goal, std::size_t k, Budget& alternatives) {
+inline Routes yen(const Graph& graph, Id start, Id goal, std::size_t k, Budget& alternatives, const Path* suppliedReference = nullptr) {
   Routes result;
   if (start >= graph.size() || goal >= graph.size()) throw std::out_of_range("terminal ID");
   if (k == 0) return result;
   Budget referenceBudget;
-  const auto reference=shortest(graph,start,goal,referenceBudget);
+  SearchResult reference;
+  if (suppliedReference) {
+    if(suppliedReference->nodes.empty() || suppliedReference->nodes.front()!=start ||
+       suppliedReference->nodes.back()!=goal ||
+       std::set<Id>(suppliedReference->nodes.begin(),suppliedReference->nodes.end()).size()!=suppliedReference->nodes.size())
+      throw std::invalid_argument("invalid supplied reference");
+    reference.found=true; reference.path=*suppliedReference;
+    reference.path.cost=graph.pathCost(reference.path.nodes);
+  } else reference=shortest(graph,start,goal,referenceBudget);
   result.referencePops=referenceBudget.pops;
   if (!reference.found) { result.exhausted=true; return result; }
   result.paths.push_back(reference.path);
