@@ -232,6 +232,8 @@ install(DIRECTORY include/${PROJECT_NAME}/
 
 ## Add gtest based cpp test target and link libraries
 if(CATKIN_ENABLE_TESTING)
+  add_executable(route_supply_fixture_runner test/route_supply_fixture_runner.cpp)
+  target_link_libraries(route_supply_fixture_runner ${PROJECT_NAME} ${catkin_LIBRARIES} ${JSONCPP_LIBRARIES})
   catkin_add_gtest(route_snapshot_test test/route_snapshot_test.cpp)
   if(TARGET route_snapshot_test)
     target_link_libraries(route_snapshot_test ${PROJECT_NAME} ${catkin_LIBRARIES} ${JSONCPP_LIBRARIES})
