@@ -1045,7 +1045,7 @@ namespace globalPlanner{
 				continue;
 			}
 			double yawDist = 0;
-			double prevYaw = this->currYaw_;
+			double prevYaw = this->routeSnapshot_ ? this->routeStartPose_.yaw : this->currYaw_;
 			int unknownVoxel = 0;
 			for (int i=0; i<int(path.size())-1; ++i){
 				std::shared_ptr<PRM::Node> currNode = path[i];
@@ -1190,6 +1190,9 @@ namespace globalPlanner{
 		this->odom_ = *odom;
 		this->position_ = Eigen::Vector3d (this->odom_.pose.pose.position.x, this->odom_.pose.pose.position.y, this->odom_.pose.pose.position.z);
 		this->currYaw_ = globalPlanner::rpy_from_quaternion(this->odom_.pose.pose.orientation);
+		if (this->routeMode_ != "historical_legacy") {
+			this->routePoseMailbox_.update(this->position_,this->currYaw_,odom->header.stamp.toSec());
+		}
 		this->odomReceived_ = true;
 
 		if (this->histTraj_.size() == 0){

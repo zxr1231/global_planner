@@ -18,6 +18,7 @@
 #include <chrono>
 #include <global_planner/routeSnapshot.h>
 #include <global_planner/routeCandidates.h>
+#include <global_planner/routePose.h>
 
 
 namespace globalPlanner{
@@ -121,6 +122,8 @@ namespace globalPlanner{
 		bool uniqueGainEvaluatorAvailable_ = true;
 		bool uniqueGainOnlineAvailable_ = true;
 		std::string routeMode_ = "historical_legacy";
+		RoutePoseMailbox routePoseMailbox_;
+		RoutePose routeStartPose_;
 		std::shared_ptr<const mapManager::OccupancyMapSnapshot> routeSnapshot_;
 		bool findRouteControlCandidates();
 		bool diagnosticSnapshotEnabled_ = false;

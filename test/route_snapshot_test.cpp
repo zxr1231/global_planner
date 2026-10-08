@@ -2,6 +2,8 @@
 #include <global_planner/dep.h>
 #include <global_planner/PRMAstar.h>
 #include <jsoncpp/json/json.h>
+#include <thread>
+#include <atomic>
 class FrozenTestMap: public mapManager::occMap {
  public:
  FrozenTestMap() {
@@ -28,7 +30,9 @@ struct RouteControlTestAccess {
   p.goalCandidates_.push_back(prev);
  }
  static void snapshot(DEP& p,bool enable){p.routeSnapshot_=enable?std::make_shared<const mapManager::OccupancyMapSnapshot>(p.map_->captureSnapshot()):nullptr;}
- static bool generate(DEP& p,const std::string& mode){p.routeMode_=mode;return p.findRouteControlCandidates();}
+ static bool generate(DEP& p,const std::string& mode){
+  p.routeMode_=mode;p.routePoseMailbox_.update(p.position_,p.currYaw_,1.0);return p.findRouteControlCandidates();
+ }
  static const auto& paths(DEP& p){return p.candidatePaths_;}
  static const auto& metrics(DEP& p){return p.candidateLegacyMetrics_;}
  static const auto& yaws(DEP& p){return p.yaws_;}
@@ -75,5 +79,27 @@ TEST(RouteSnapshot, AllControlModesReturnSafeRoutesAndAuditablePool) {
   EXPECT_EQ(42u,log["map_version"].asUInt64());EXPECT_EQ(1u,log["selected_count"].asUInt64());
   for(const auto& entry:log["astar_comparisons"]){EXPECT_TRUE(entry["snapshot_matches_comparison_map"].asBool());EXPECT_NEAR(0,entry["excess_length"].asDouble(),1e-10);}
  }
+}
+TEST(RouteSnapshot, PoseMailboxReturnsCoherentPairsAndRejectsInvalidSamples) {
+ globalPlanner::RoutePoseMailbox mailbox;EXPECT_FALSE(mailbox.capture().valid);
+ std::atomic<bool> done{false};std::atomic<int> bad{0};
+ std::thread writer([&]{for(int i=0;i<20000;++i){double x=i%2;mailbox.update(Eigen::Vector3d(x,2*x,3*x),x,4*x);}done=true;});
+ do {const auto p=mailbox.capture();if(p.valid && (p.position.x()!=p.yaw || p.position.y()!=2*p.yaw || p.stamp!=4*p.yaw))++bad;} while(!done);
+ writer.join();EXPECT_EQ(0,bad.load());EXPECT_EQ(20000u,mailbox.capture().sequence);
+ mailbox.update(Eigen::Vector3d::Zero(),std::numeric_limits<double>::quiet_NaN(),0);EXPECT_FALSE(mailbox.capture().valid);
+}
+TEST(RouteSnapshot, ScoringAndRouteStartStayFixedDuringOdometryUpdates) {
+ ros::NodeHandle nh;globalPlanner::DEP planner(nh);auto map=std::make_shared<FrozenTestMap>();
+ using A=globalPlanner::RouteControlTestAccess;A::configure(planner,map);ASSERT_TRUE(A::generate(planner,"distance_single"));
+ std::vector<std::shared_ptr<PRM::Node>> best;planner.findBestPath(A::paths(planner),best);const auto expected=A::metrics(planner);
+ const auto start=A::paths(planner).front().front()->pos;
+ std::atomic<bool> done{false};std::thread writer([&]{
+  while(!done){auto odom=boost::make_shared<nav_msgs::Odometry>();odom->pose.pose.position.x=2;odom->pose.pose.position.z=1;
+   odom->pose.pose.orientation=globalPlanner::quaternion_from_rpy(0,0,1.0);planner.odomCB(odom);}
+ });
+ for(int i=0;i<20;++i){planner.findBestPath(A::paths(planner),best);EXPECT_DOUBLE_EQ(expected[0].score,A::metrics(planner)[0].score);EXPECT_DOUBLE_EQ(expected[0].yawDistance,A::metrics(planner)[0].yawDistance);EXPECT_EQ(start,A::paths(planner).front().front()->pos);}
+ done=true;writer.join();
+ // Historical path still uses its live-yaw semantics when no new-control snapshot is active.
+ A::snapshot(planner,false);planner.findBestPath(A::paths(planner),best);EXPECT_NE(expected[0].yawDistance,A::metrics(planner)[0].yawDistance);
 }
 int main(int argc,char** argv){ros::init(argc,argv,"i2_snapshot_checks",ros::init_options::AnonymousName);testing::InitGoogleTest(&argc,argv);return RUN_ALL_TESTS();}

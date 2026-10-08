@@ -21,6 +21,12 @@ bool DEP::findRouteControlCandidates() {
   this->lastPlanningMetrics_.routeControlJson=Json::writeString(writer,log);
  };
  try {
+  routeStartPose_=routePoseMailbox_.capture();
+  if(!routeStartPose_.valid)throw std::runtime_error("route pose unavailable or nonfinite");
+  const Eigen::Vector3d startPosition=routeStartPose_.position;
+  const double startYaw=routeStartPose_.yaw;
+  log["pose_sequence"]=Json::UInt64(routeStartPose_.sequence);log["pose_stamp"]=routeStartPose_.stamp;
+  log["pose_context_schema"]=1;
   this->routeSnapshot_=std::make_shared<const mapManager::OccupancyMapSnapshot>(this->map_->captureSnapshot());
   const auto& snapshot=*this->routeSnapshot_;log["map_version"]=Json::UInt64(snapshot.version);
   PathGainVisibilityConfig visibility;
@@ -35,13 +41,13 @@ bool DEP::findRouteControlCandidates() {
   });
   for(std::size_t i=1;i<live.size();++i)
    if(live[i]->pos==live[i-1]->pos)throw std::invalid_argument("duplicate roadmap position needs persistent identity");
-  std::vector<std::shared_ptr<PRM::Node>> detached{std::make_shared<PRM::Node>(position_)};
+  std::vector<std::shared_ptr<PRM::Node>> detached{std::make_shared<PRM::Node>(startPosition)};
   struct ClearAdjacency {
    std::vector<std::shared_ptr<PRM::Node>>& nodes;
    ~ClearAdjacency(){for(const auto& node:nodes)node->adjNodes.clear();}
   } cleanup{detached};
   std::map<std::shared_ptr<PRM::Node>,Id> ids;
-  std::vector<Graph::Position> positions{{position_(0),position_(1),position_(2)}};
+  std::vector<Graph::Position> positions{{startPosition(0),startPosition(1),startPosition(2)}};
   for(const auto& node:live) {
    ids[node]=detached.size();detached.push_back(std::make_shared<PRM::Node>(node->pos));
    positions.push_back({node->pos(0),node->pos(1),node->pos(2)});
@@ -49,7 +55,7 @@ bool DEP::findRouteControlCandidates() {
   std::vector<Edge> edges;
   for(const auto& node:live) {
    const Id id=ids.at(node);
-   if((node->pos-position_).norm()<=maxConnectDist_ && view.freeLine(position_,node->pos))edges.push_back({0,id});
+   if((node->pos-startPosition).norm()<=maxConnectDist_ && view.freeLine(startPosition,node->pos))edges.push_back({0,id});
    for(const auto& next:node->adjNodes)
     if(ids.count(next) && view.freeLine(node->pos,next->pos))edges.push_back({id,ids.at(next)});
   }
@@ -59,7 +65,7 @@ bool DEP::findRouteControlCandidates() {
   for(Id i=0;i<graph.size();++i)for(const auto& edge:graph.neighbors(i)) {
    Json::Value pair(Json::arrayValue);pair.append(Json::UInt64(i));pair.append(Json::UInt64(edge.to));arcs.append(pair);
   }
-  log["graph_nodes"]=nodes;log["graph_edges"]=arcs;log["start_yaw"]=currYaw_;
+  log["graph_nodes"]=nodes;log["graph_edges"]=arcs;log["start_yaw"]=startYaw;
   Limits limits;MotionConfig motion;motion.speed=vel_;motion.angularSpeed=angularVel_;motion.yawPenalty=yawPenaltyWeight_;
   log["pool_per_goal"]=6;log["routes_per_goal"]=3;log["global_cap"]=30;
   log["length_ratio"]=limits.lengthRatio;log["time_ratio"]=limits.timeRatio;log["extra_yaw"]=limits.extraYaw;
@@ -100,7 +106,7 @@ bool DEP::findRouteControlCandidates() {
   for(const auto& node:detached)node->adjNodes.clear();
   std::vector<Candidate> preparedReferences;
   for(Id g=0;g<goals.size();++g) {
-   auto p=prepare(graph,goals[g],{references[g]},currYaw_,terminalYaws[g],motion,limits,
+   auto p=prepare(graph,goals[g],{references[g]},startYaw,terminalYaws[g],motion,limits,
       [&](Id a,Id b){return view.freeLine(detached[a]->pos,detached[b]->pos);});
    if(!p.referenceReady) throw std::runtime_error("reference validation failed");
    preparedReferences.push_back(p.records.front());
@@ -118,7 +124,7 @@ bool DEP::findRouteControlCandidates() {
     raw=result.paths;globalPops+=alternative.pops;
     log["search_cutoffs"].append(static_cast<int>(result.stop));
    }
-   auto pool=prepare(graph,goals[g],raw,currYaw_,terminalYaws[g],motion,limits,
+   auto pool=prepare(graph,goals[g],raw,startYaw,terminalYaws[g],motion,limits,
     [&](Id a,Id b){return view.freeLine(detached[a]->pos,detached[b]->pos);},proceed,&preparedReferences[g]);
    pools.push_back(std::move(pool));
   }
