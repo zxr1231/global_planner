@@ -29,6 +29,8 @@ struct RouteControlTestAccess {
   }
   p.goalCandidates_.push_back(prev);
  }
+ static std::shared_ptr<PRM::Node> goal(DEP& p){return p.goalCandidates_.front();}
+ static const auto& gainSources(DEP& p){return p.routeGainSources_;}
  static void snapshot(DEP& p,bool enable){p.routeSnapshot_=enable?std::make_shared<const mapManager::OccupancyMapSnapshot>(p.map_->captureSnapshot()):nullptr;}
  static bool generate(DEP& p,const std::string& mode){
   p.routeMode_=mode;p.routePoseMailbox_.update(p.position_,p.currYaw_,1.0);return p.findRouteControlCandidates();
@@ -101,5 +103,44 @@ TEST(RouteSnapshot, ScoringAndRouteStartStayFixedDuringOdometryUpdates) {
  done=true;writer.join();
  // Historical path still uses its live-yaw semantics when no new-control snapshot is active.
  A::snapshot(planner,false);planner.findBestPath(A::paths(planner),best);EXPECT_NE(expected[0].yawDistance,A::metrics(planner)[0].yawDistance);
+}
+TEST(RouteSnapshot, ScoredGoalGainMustFeedNextRoadmapPrefilter) {
+ ros::NodeHandle nh;globalPlanner::DEP planner(nh);auto map=std::make_shared<FrozenTestMap>();
+ using A=globalPlanner::RouteControlTestAccess;A::configure(planner,map);
+ auto original=A::goal(planner);original->numVoxels=999999;
+ auto legacy=A::legacy(planner);std::vector<std::shared_ptr<PRM::Node>> best;
+ planner.findBestPath(legacy,best);const auto expected=original->numVoxels;
+ ASSERT_LT(expected,999999);
+ for(const std::string mode:{"distance_single","generic_k_shortest","geometric_diverse"}) {
+  original->numVoxels=999999;original->g=123;original->f=456;
+  const auto parent=original->parent;const auto adjacency=original->adjNodes;
+  ASSERT_TRUE(A::generate(planner,mode));
+  EXPECT_EQ(999999,original->numVoxels); // construction must not refresh unscored nodes
+  planner.findBestPath(A::paths(planner),best);
+  EXPECT_EQ(expected,original->numVoxels) << "detached scoring lost live-roadmap gain feedback";
+  EXPECT_EQ(A::paths(planner).front().back()->yawNumVoxels,original->yawNumVoxels);
+  EXPECT_DOUBLE_EQ(123,original->g);EXPECT_DOUBLE_EQ(456,original->f);
+  EXPECT_EQ(parent,original->parent);EXPECT_EQ(adjacency,original->adjNodes);
+ }
+}
+TEST(RouteSnapshot, IntermediateFeedbackLeavesUnscoredNodesUntouched) {
+ ros::NodeHandle nh;globalPlanner::DEP planner(nh);auto map=std::make_shared<FrozenTestMap>();
+ using A=globalPlanner::RouteControlTestAccess;A::configure(planner,map);
+ ASSERT_TRUE(A::generate(planner,"distance_single"));
+ std::shared_ptr<PRM::Node> middle,liveMiddle,unscored;
+ for(const auto& pair:A::gainSources(planner)) {
+  pair.second->numVoxels=999999;
+  if(pair.first->pos.x()==0){middle=pair.first;liveMiddle=pair.second;}
+  if(pair.first->pos.x()==-1)unscored=pair.second;
+ }
+ ASSERT_TRUE(middle);ASSERT_TRUE(unscored);
+ const auto& originalPath=A::paths(planner).front();
+ std::vector<std::vector<std::shared_ptr<PRM::Node>>> paths{{originalPath.front(),middle,originalPath.back()}};
+ std::vector<std::shared_ptr<PRM::Node>> best;planner.findBestPath(paths,best);
+ EXPECT_LT(liveMiddle->numVoxels,999999);EXPECT_EQ(middle->numVoxels,liveMiddle->numVoxels);
+ EXPECT_EQ(middle->yawNumVoxels,liveMiddle->yawNumVoxels);EXPECT_EQ(999999,unscored->numVoxels);
+ // No snapshot means historical fallback: a stale association must have no effect.
+ A::snapshot(planner,false);liveMiddle->numVoxels=999999;
+ planner.findBestPath(paths,best);EXPECT_EQ(999999,liveMiddle->numVoxels);
 }
 int main(int argc,char** argv){ros::init(argc,argv,"i2_snapshot_checks",ros::init_options::AnonymousName);testing::InitGoogleTest(&argc,argv);return RUN_ALL_TESTS();}

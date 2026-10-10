@@ -6,13 +6,23 @@
 #include <iomanip>
 
 namespace globalPlanner {
+void DEP::syncRouteNodeGain(const std::shared_ptr<PRM::Node>& node) {
+ if (!routeSnapshot_) return;
+ const auto source=routeGainSources_.find(node);
+ if (source==routeGainSources_.end()) return; // synthetic start / historical node
+ source->second->numVoxels=node->numVoxels;
+ source->second->yawNumVoxels=node->yawNumVoxels;
+}
+
 bool DEP::findRouteControlCandidates() {
  using namespace routeSearch;
  using namespace routeCandidates;
  using Clock=std::chrono::steady_clock;
  const auto begun=Clock::now();
+ routeGainSources_.clear();
  Json::Value log(Json::objectValue);
  log["protocol"]="I2_GENERIC_ROUTES_V1";log["protocol_sha256"]="9136d601b964fc273565e381c91da6075c33b7b47a4269d6664714df281d4f9d";log["mode"]=this->routeMode_;
+ log["gain_feedback_policy"]="scored_nodes_to_roadmap_v1";
  log["status"]="building";log["fallback"]=false;
  auto finish=[&](const std::string& status,bool fallback) {
   log["status"]=status;log["fallback"]=fallback;
@@ -50,6 +60,7 @@ bool DEP::findRouteControlCandidates() {
   std::vector<Graph::Position> positions{{startPosition(0),startPosition(1),startPosition(2)}};
   for(const auto& node:live) {
    ids[node]=detached.size();detached.push_back(std::make_shared<PRM::Node>(node->pos));
+   routeGainSources_.emplace(detached.back(),node);
    positions.push_back({node->pos(0),node->pos(1),node->pos(2)});
   }
   std::vector<Edge> edges;

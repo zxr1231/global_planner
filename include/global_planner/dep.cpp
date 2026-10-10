@@ -363,6 +363,7 @@ namespace globalPlanner{
 		this->lastPlanningMetrics_.gainSampleSpacing = this->pathGainSampleSpacing_;
 		this->lastPlanningMetrics_.uniqueEvaluatorAvailable = this->uniqueGainEvaluatorAvailable_;
 		this->routeSnapshot_.reset();
+		this->routeGainSources_.clear();
 		this->candidateUniqueMetrics_.clear();
 		this->bestPathGain_ = -1;
 		if (not this->odomReceived_){
@@ -418,6 +419,7 @@ namespace globalPlanner{
 			findCandidatePathSuccess = this->findRouteControlCandidates();
 			if (!findCandidatePathSuccess) {
 				this->routeSnapshot_.reset();
+				this->routeGainSources_.clear();
 				findCandidatePathSuccess = this->findCandidatePath(this->goalCandidates_, this->candidatePaths_);
 			}
 		}
@@ -491,6 +493,7 @@ namespace globalPlanner{
 		// cout << "path time: " << (pathEndTime - pathStartTime).toSec() << endl;
 		// cout << "found best path with size: " << this->bestPath_.size() << endl;
 		this->routeSnapshot_.reset();
+		this->routeGainSources_.clear();
 		return !this->bestPath_.empty();
 	}
 
@@ -1058,6 +1061,7 @@ namespace globalPlanner{
 				int unknownVoxelNum = this->calculateUnknown(currNode, yawNumVoxels);
 				currNode->numVoxels = unknownVoxelNum;
 				currNode->yawNumVoxels = yawNumVoxels;
+				this->syncRouteNodeGain(currNode);
 
 
 				unknownVoxel += currNode->getUnknownVoxels(angle);
@@ -1069,6 +1073,7 @@ namespace globalPlanner{
 			int unknownVoxelNum = this->calculateUnknown(path.back(), yawNumVoxels);
 			path.back()->numVoxels = unknownVoxelNum;
 			path.back()->yawNumVoxels = yawNumVoxels;
+			this->syncRouteNodeGain(path.back());
 			unknownVoxel += path.back()->getBestYawVoxel();
 			yawDist += globalPlanner::angleDiff(prevYaw, path.back()->getBestYaw());
 

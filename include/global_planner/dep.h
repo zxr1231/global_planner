@@ -125,6 +125,9 @@ namespace globalPlanner{
 		RoutePoseMailbox routePoseMailbox_;
 		RoutePose routeStartPose_;
 		std::shared_ptr<const mapManager::OccupancyMapSnapshot> routeSnapshot_;
+		// Per-plan identities: only scored gains flow back, never A* search state.
+		std::unordered_map<std::shared_ptr<PRM::Node>, std::shared_ptr<PRM::Node>> routeGainSources_;
+		void syncRouteNodeGain(const std::shared_ptr<PRM::Node>& node);
 		bool findRouteControlCandidates();
 		bool diagnosticSnapshotEnabled_ = false;
 		std::string diagnosticSnapshotDir_;
