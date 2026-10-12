@@ -133,6 +133,7 @@ include_directories(
 #   src/${PROJECT_NAME}/global_planner.cpp
 # )
 add_library(${PROJECT_NAME} src/globalPlannerLib.cpp
+                            include/${PROJECT_NAME}/cameraGainEvaluator.cpp
                             include/${PROJECT_NAME}/routeControls.cpp
                             include/${PROJECT_NAME}/returnHome.cpp
 							include/${PROJECT_NAME}/diagnosticSnapshot.cpp
@@ -232,6 +233,14 @@ install(DIRECTORY include/${PROJECT_NAME}/
 
 ## Add gtest based cpp test target and link libraries
 if(CATKIN_ENABLE_TESTING)
+  catkin_add_gtest(camera_gain_evaluator_test test/camera_gain_evaluator_test.cpp)
+  if(TARGET camera_gain_evaluator_test)
+    target_link_libraries(camera_gain_evaluator_test ${PROJECT_NAME} ${catkin_LIBRARIES})
+  endif()
+  add_executable(camera_gain_batch_runner test/camera_gain_batch_runner.cpp)
+  target_link_libraries(camera_gain_batch_runner ${PROJECT_NAME} ${catkin_LIBRARIES} ${JSONCPP_LIBRARIES})
+  add_executable(camera_gain_fixture_runner test/camera_gain_fixture_runner.cpp)
+  target_link_libraries(camera_gain_fixture_runner ${PROJECT_NAME} ${catkin_LIBRARIES} ${JSONCPP_LIBRARIES})
   add_executable(route_supply_fixture_runner test/route_supply_fixture_runner.cpp)
   target_link_libraries(route_supply_fixture_runner ${PROJECT_NAME} ${catkin_LIBRARIES} ${JSONCPP_LIBRARIES})
   catkin_add_gtest(route_snapshot_test test/route_snapshot_test.cpp)
