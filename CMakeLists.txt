@@ -233,6 +233,12 @@ install(DIRECTORY include/${PROJECT_NAME}/
 
 ## Add gtest based cpp test target and link libraries
 if(CATKIN_ENABLE_TESTING)
+  add_executable(two_stage_fixture_runner test/two_stage_fixture_runner.cpp)
+  target_link_libraries(two_stage_fixture_runner ${PROJECT_NAME} ${catkin_LIBRARIES} ${JSONCPP_LIBRARIES})
+  catkin_add_gtest(two_stage_fixture_test test/two_stage_fixture_test.cpp)
+  if(TARGET two_stage_fixture_test)
+    target_link_libraries(two_stage_fixture_test ${PROJECT_NAME} ${catkin_LIBRARIES})
+  endif()
   catkin_add_gtest(camera_gain_evaluator_test test/camera_gain_evaluator_test.cpp)
   if(TARGET camera_gain_evaluator_test)
     target_link_libraries(camera_gain_evaluator_test ${PROJECT_NAME} ${catkin_LIBRARIES})
