@@ -25,6 +25,19 @@ CameraGainEvaluator::CameraGainEvaluator(const mapManager::OccupancyMapSnapshot&
     (c.bodyToCamera.topLeftCorner<3,3>().transpose()*c.bodyToCamera.topLeftCorner<3,3>()-Eigen::Matrix3d::Identity()).norm()>1e-9 ||
     std::abs(c.bodyToCamera.topLeftCorner<3,3>().determinant()-1)>1e-9)
   throw std::invalid_argument("camera extrinsic must be a rigid transform");
+ std::vector<uint8_t> region[3];
+ for(int a=0;a<3;++a) {
+  region[a].resize(m.dimensions[a]);
+  for(int i=0;i<m.dimensions[a];++i) {
+   const double centre=m.mapMin[a]+(double(i)+.5)*m.resolution;
+   region[a][i]=centre>=c.planningMin[a] && centre<=c.planningMax[a];
+  }
+ }
+ opticalState_.resize(count);
+ for(int x=0;x<m.dimensions.x();++x)for(int y=0;y<m.dimensions.y();++y)for(int z=0;z<m.dimensions.z();++z) {
+  const auto id=address(Eigen::Vector3i(x,y,z));const auto value=m.occupancy[id];
+  opticalState_[id]=value>=m.pOccLog?1:(value<m.pMinLog && region[0][x] && region[1][y] && region[2][z]?-1:0);
+ }
  for(int v=c.margin;v<c.rows-c.margin;v+=c.pixelSkip)
   for(int u=c.margin;u<c.cols-c.margin;u+=c.pixelSkip) {
    Eigen::Vector3d ray((u-c.cx)/c.fx,(v-c.cy)/c.fy,1);
@@ -96,14 +109,15 @@ CameraGainEvaluator::AddressSet CameraGainEvaluator::visible(const Eigen::Vector
    }
   }
   const int safety=(terminal-sensor).cwiseAbs().sum()+3;
+  int64_t linear=address(sensor);
+  const int64_t stride[3]={int64_t(map_.dimensions.y())*map_.dimensions.z(),map_.dimensions.z(),1};
   for(int k=0;k<safety;++k) {
    int a=maximum.x()<maximum.y() && maximum.x()<maximum.z()?0:(maximum.y()<maximum.z()?1:2);
-   current[a]+=step[a];maximum[a]+=delta[a];work.visit();
+   current[a]+=step[a];linear+=step[a]*stride[a];maximum[a]+=delta[a];work.visit();
    if(!inBounds(current))break;
-   const auto id=address(current);const double occupancy=map_.occupancy[id];
-   if(occupancy>=map_.pOccLog)break;
-   const Eigen::Vector3d centre=map_.mapMin+(current.cast<double>()+Eigen::Vector3d::Constant(.5))*map_.resolution;
-   if(occupancy<map_.pMinLog && (centre.array()>=config_.planningMin.array()).all() && (centre.array()<=config_.planningMax.array()).all())result.insert(id);
+   const auto id=uint32_t(linear);const auto state=opticalState_[id];
+   if(state==1)break;
+   if(state==-1)result.insert(id);
    if(current==terminal)break;
    if(k==safety-1)throw std::runtime_error("camera traversal safety bound exceeded");
   }

@@ -38,6 +38,8 @@ private:
  const mapManager::OccupancyMapSnapshot& map_;
  CameraGainConfig config_;
  std::vector<Eigen::Vector3d> rays_;
+ // Immutable compact optical state: occupied / observable Unknown / transparent.
+ std::vector<int8_t> opticalState_;
  struct Work {
   CameraGainBudget budget;
   std::chrono::steady_clock::time_point started;
