@@ -15,12 +15,15 @@ struct CameraGainBudget {
  uint64_t maxVoxelVisits=std::numeric_limits<uint64_t>::max();
  size_t maxSamples=std::numeric_limits<size_t>::max();
  double maxMilliseconds=std::numeric_limits<double>::infinity();
+ bool profile=false;
 };
 struct CameraGainResult {
  PathGainEvaluation gain;
  std::string failureReason;
  uint64_t voxelVisits=0;
  double evaluationMs=0;
+ double endpointMs=0,traversalMs=0;
+ uint64_t representativeCount=0;
 };
 // Caller owns immutable snapshot lifetime; no live-map reads or visibility-result cache.
 class CameraGainEvaluator {
@@ -39,6 +42,10 @@ private:
   CameraGainBudget budget;
   std::chrono::steady_clock::time_point started;
   uint64_t visits=0;
+  double endpointMs=0,traversalMs=0;
+  uint64_t representativeCount=0;
+  std::vector<uint32_t> endpointMarks;
+  uint32_t endpointGeneration=0;
   void check() const;
   void visit();
  };

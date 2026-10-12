@@ -58,12 +58,33 @@ CameraGainEvaluator::AddressSet CameraGainEvaluator::visible(const Eigen::Vector
  if((start.array()<0).any() || (start.array()>=map_.dimensions.cast<double>().array()).any())return {};
  const Eigen::Vector3i sensor=start.array().floor().cast<int>();
  AddressSet result;std::unordered_set<uint32_t> endpoints;
+ // Local generation marks are ray-endpoint scratch, not cached map/visibility results.
+ const bool denseMarks=map_.occupancy.size()<=32u*1024u*1024u/sizeof(uint32_t);
+ if(denseMarks) {
+  if(work.endpointMarks.empty())work.endpointMarks.assign(map_.occupancy.size(),0);
+  if(++work.endpointGeneration==0){std::fill(work.endpointMarks.begin(),work.endpointMarks.end(),0);work.endpointGeneration=1;}
+ }
+ struct Endpoint {Eigen::Vector3d point;Eigen::Vector3i index;};
+ std::vector<Endpoint> representatives;representatives.reserve(2048);
+ const auto projected=work.budget.profile?std::chrono::steady_clock::now():work.started;
  for(size_t n=0;n<rays_.size();++n) {
   if((n&255)==0)work.check();
   const Eigen::Vector3d end=(origin+config_.range*(rotation*rays_[n])-map_.mapMin)/map_.resolution;
   if(!end.allFinite() || (end.array()<0).any() || (end.array()>=map_.dimensions.cast<double>().array()).any())continue;
   const Eigen::Vector3i terminal=end.array().floor().cast<int>();
-  if(!endpoints.insert(address(terminal)).second || terminal==sensor)continue;
+  const auto endpointId=address(terminal);
+  if(denseMarks) {
+   if(work.endpointMarks[endpointId]==work.endpointGeneration)continue;
+   work.endpointMarks[endpointId]=work.endpointGeneration;
+  }else if(!endpoints.insert(endpointId).second)continue;
+  if(terminal==sensor)continue;
+  representatives.push_back({end,terminal});
+ }
+ const auto traversal=work.budget.profile?std::chrono::steady_clock::now():work.started;
+ if(work.budget.profile)work.endpointMs+=std::chrono::duration<double,std::milli>(traversal-projected).count();
+ work.representativeCount+=representatives.size();
+ for(const auto& ray:representatives) {
+  const auto& end=ray.point;const auto& terminal=ray.index;
   Eigen::Vector3i current=sensor,step=Eigen::Vector3i::Zero();
   const Eigen::Vector3d direction=end-start;
   Eigen::Vector3d delta=Eigen::Vector3d::Constant(std::numeric_limits<double>::infinity()),maximum=delta;
@@ -87,6 +108,7 @@ CameraGainEvaluator::AddressSet CameraGainEvaluator::visible(const Eigen::Vector
    if(k==safety-1)throw std::runtime_error("camera traversal safety bound exceeded");
   }
  }
+ if(work.budget.profile)work.traversalMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-traversal).count();
  return result;
 }
 CameraGainEvaluator::AddressSet CameraGainEvaluator::visibleUnknown(const Eigen::Vector3d& p,double yaw) const {
@@ -111,7 +133,7 @@ CameraGainResult CameraGainEvaluator::evaluateSamples(const std::vector<PathGain
   result.gain.duplicateRatio=result.gain.rawGain?1.0-double(result.gain.uniqueGain)/result.gain.rawGain:0;
   result.gain.uniqueUtility=time>1e-6?result.gain.uniqueGain/time:0;result.gain.valid=true;
  }catch(const std::exception& e){result.gain=PathGainEvaluation();result.failureReason=e.what();}
- result.voxelVisits=work.visits;result.evaluationMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-work.started).count();
+ result.voxelVisits=work.visits;result.endpointMs=work.endpointMs;result.traversalMs=work.traversalMs;result.representativeCount=work.representativeCount;result.evaluationMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-work.started).count();
  return result;
 }
 }

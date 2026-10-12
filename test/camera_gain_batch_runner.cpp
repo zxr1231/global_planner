@@ -11,7 +11,8 @@ struct Context {
 };
 int main(int argc,char** argv) {
  try {
-  if(argc!=2)throw std::invalid_argument("usage: camera_gain_batch_runner REQUEST_JSON");
+  if(argc!=2 && argc!=3)throw std::invalid_argument("usage: camera_gain_batch_runner REQUEST_JSON [--profile]");
+  globalPlanner::CameraGainBudget budget;budget.profile=argc==3 && std::string(argv[2])=="--profile";
   const auto requests=loadJson(argv[1]);if(!requests.isArray() || requests.size()!=12)throw std::invalid_argument("registered workload needs12 prefixes");
   std::vector<std::unique_ptr<Context>> contexts;
   const auto preparation=std::chrono::steady_clock::now();
@@ -34,9 +35,9 @@ int main(int argc,char** argv) {
   for(const auto& ctx:contexts)if(!ctx->evaluator->evaluateSamples(ctx->samples,ctx->time,ctx->map.version).gain.valid)throw std::runtime_error("batch warmup invalid");
   const auto started=std::chrono::steady_clock::now();
   for(int i=0;i<30;++i) {
-   const auto& c=*contexts[i%12];auto result=c.evaluator->evaluateSamples(c.samples,c.time,c.map.version);
+   const auto& c=*contexts[i%12];auto result=c.evaluator->evaluateSamples(c.samples,c.time,c.map.version,budget);
    if(!result.gain.valid)throw std::runtime_error(result.failureReason);
-   Json::Value row;row["index"]=i;row["prefix_index"]=i%12;row["evaluation_ms"]=result.evaluationMs;row["raw_gain"]=Json::UInt64(result.gain.rawGain);row["unique_gain"]=Json::UInt64(result.gain.uniqueGain);output["candidates"].append(row);
+   Json::Value row;row["index"]=i;row["prefix_index"]=i%12;row["evaluation_ms"]=result.evaluationMs;row["endpoint_ms"]=result.endpointMs;row["traversal_ms"]=result.traversalMs;row["representatives"]=Json::UInt64(result.representativeCount);row["visits"]=Json::UInt64(result.voxelVisits);row["raw_gain"]=Json::UInt64(result.gain.rawGain);row["unique_gain"]=Json::UInt64(result.gain.uniqueGain);output["candidates"].append(row);
   }
   output["batch_ms"]=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count();
   output["passed_500ms"]=output["batch_ms"].asDouble()<=500;
