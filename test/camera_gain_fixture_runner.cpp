@@ -3,7 +3,9 @@
 #include <chrono>
 int main(int argc,char** argv) {
  try {
-  if(argc!=3)throw std::invalid_argument("usage: camera_gain_fixture_runner SNAPSHOT_DIR INPUT_JSON");
+  if(argc!=3 && argc!=4)throw std::invalid_argument("usage: camera_gain_fixture_runner SNAPSHOT_DIR INPUT_JSON [--summary-only]");
+  const bool summaryOnly=argc==4;
+  if(summaryOnly && std::string(argv[3])!="--summary-only")throw std::invalid_argument("unknown fixture option");
   const std::string directory=argv[1];const auto manifest=loadJson(directory+"/manifest.json");
   if(manifest["schema"].asString()!="cerlab-r1-snapshot-v1" || !manifest["complete"].asBool())throw std::runtime_error("invalid manifest");
   const std::string file=directory+"/"+manifest["map_file"].asString(),plannerFile=directory+"/"+manifest["planner_file"].asString();
@@ -30,8 +32,9 @@ int main(int argc,char** argv) {
   for(auto id:result.gain.uniqueAddresses)output["unique_addresses"].append(Json::UInt(id));
   for(auto n:result.gain.marginalGains)output["marginal_gains"].append(Json::UInt64(n));
   // Serialized fixed-pose sets are a correctness oracle, outside reported evaluation times.
+  output["pose_addresses_omitted"]=summaryOnly;
   output["pose_addresses"]=Json::Value(Json::arrayValue);
-  for(const auto& pose:samples) {
+  if(!summaryOnly)for(const auto& pose:samples) {
    const auto visible=evaluator.visibleUnknown(pose.position,pose.yaw);std::vector<uint32_t> ordered(visible.begin(),visible.end());std::sort(ordered.begin(),ordered.end());
    Json::Value ids(Json::arrayValue);for(auto id:ordered)ids.append(Json::UInt(id));output["pose_addresses"].append(ids);
   }
