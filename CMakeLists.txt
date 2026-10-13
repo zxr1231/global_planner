@@ -233,6 +233,12 @@ install(DIRECTORY include/${PROJECT_NAME}/
 
 ## Add gtest based cpp test target and link libraries
 if(CATKIN_ENABLE_TESTING)
+  add_executable(single_anchor_fixture_runner test/single_anchor_fixture_runner.cpp)
+  target_link_libraries(single_anchor_fixture_runner ${PROJECT_NAME} ${catkin_LIBRARIES} ${JSONCPP_LIBRARIES})
+  catkin_add_gtest(single_anchor_fixture_test test/single_anchor_fixture_test.cpp)
+  if(TARGET single_anchor_fixture_test)
+    target_link_libraries(single_anchor_fixture_test ${PROJECT_NAME} ${catkin_LIBRARIES})
+  endif()
   add_executable(two_stage_fixture_runner test/two_stage_fixture_runner.cpp)
   target_link_libraries(two_stage_fixture_runner ${PROJECT_NAME} ${catkin_LIBRARIES} ${JSONCPP_LIBRARIES})
   catkin_add_gtest(two_stage_fixture_test test/two_stage_fixture_test.cpp)
