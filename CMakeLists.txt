@@ -233,6 +233,13 @@ install(DIRECTORY include/${PROJECT_NAME}/
 
 ## Add gtest based cpp test target and link libraries
 if(CATKIN_ENABLE_TESTING)
+  # Isolated counting diagnostic: no link to the camera evaluator/planner library.
+  add_executable(bound_diagnostic_runner test/bound_diagnostic_runner.cpp test/fixtureAllocation.cpp)
+  target_link_libraries(bound_diagnostic_runner ${catkin_LIBRARIES} ${JSONCPP_LIBRARIES})
+  catkin_add_gtest(bound_diagnostic_test test/bound_diagnostic_test.cpp test/fixtureAllocation.cpp)
+  if(TARGET bound_diagnostic_test)
+    target_link_libraries(bound_diagnostic_test ${catkin_LIBRARIES})
+  endif()
   add_executable(corridor_fixture_runner test/corridor_fixture_runner.cpp test/fixtureAllocation.cpp)
   target_link_libraries(corridor_fixture_runner ${PROJECT_NAME} ${catkin_LIBRARIES} ${JSONCPP_LIBRARIES})
   catkin_add_gtest(corridor_fixture_test test/corridor_fixture_test.cpp test/fixtureAllocation.cpp)
