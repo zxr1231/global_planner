@@ -79,7 +79,7 @@ CameraGainEvaluator::AddressSet CameraGainEvaluator::visible(const Eigen::Vector
  const Eigen::Vector3i sensor=start.array().floor().cast<int>();
  AddressSet result;std::unordered_set<uint32_t> endpoints;
  // Local generation marks are ray-endpoint scratch, not cached map/visibility results.
- const bool denseMarks=map_.occupancy.size()<=32u*1024u*1024u/sizeof(uint32_t);
+ const bool denseMarks=map_.occupancy.size()<=work.endpointMarkBudgetBytes/sizeof(uint32_t);
  if(denseMarks) {
   if(work.endpointMarks.empty())work.endpointMarks.assign(map_.occupancy.size(),0);
   if(++work.endpointGeneration==0){std::fill(work.endpointMarks.begin(),work.endpointMarks.end(),0);work.endpointGeneration=1;}
@@ -136,11 +136,14 @@ CameraGainEvaluator::AddressSet CameraGainEvaluator::visibleUnknown(const Eigen:
  Work work{{},std::chrono::steady_clock::now(),0};return visible(p,yaw,work);
 }
 CameraPoseSetsResult CameraGainEvaluator::evaluatePoseSets(const std::vector<PathGainWaypoint>& poses,uint64_t version,CameraSharedBudget& budget) const {
+ return evaluatePoseSets(poses,version,budget,32u*1024u*1024u);
+}
+CameraPoseSetsResult CameraGainEvaluator::evaluatePoseSets(const std::vector<PathGainWaypoint>& poses,uint64_t version,CameraSharedBudget& budget,size_t endpointMarkBudgetBytes) const {
  CameraPoseSetsResult out;const auto begin=std::chrono::steady_clock::now();
  try {
   budget.check();
   if(version!=map_.version)throw std::invalid_argument("map_version_mismatch");
-  Work work{{},begin,0};work.shared=&budget;
+  Work work{{},begin,0};work.shared=&budget;work.endpointMarkBudgetBytes=endpointMarkBudgetBytes;
   for(const auto& pose:poses){
    budget.check();if(budget.samples>=budget.maxSamples)throw BudgetExceeded("shared_sample_budget_exhausted");
    ++budget.samples;out.poseSets.push_back(visible(pose.position,pose.yaw,work));budget.check();

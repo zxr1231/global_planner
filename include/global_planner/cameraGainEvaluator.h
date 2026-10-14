@@ -51,8 +51,12 @@ public:
  CameraGainResult evaluateSamples(const std::vector<PathGainWaypoint>&,double estimatedTime,
                                  uint64_t expectedVersion,const CameraGainBudget& = {}) const;
  size_t rayCount() const{return rays_.size();}
+ size_t allocatedCapacityBytes() const{return sizeof(*this)+rays_.capacity()*sizeof(Eigen::Vector3d)+opticalState_.capacity()*sizeof(int8_t);}
  CameraPoseSetsResult evaluatePoseSets(const std::vector<PathGainWaypoint>&,
                                       uint64_t expectedVersion,CameraSharedBudget&) const;
+ // Optional per-call representation cap. Existing signatures/config layouts remain intact.
+ CameraPoseSetsResult evaluatePoseSets(const std::vector<PathGainWaypoint>&,
+                                      uint64_t expectedVersion,CameraSharedBudget&,size_t endpointMarkBudgetBytes) const;
 private:
  const mapManager::OccupancyMapSnapshot& map_;
  CameraGainConfig config_;
@@ -68,6 +72,7 @@ private:
   std::vector<uint32_t> endpointMarks;
   uint32_t endpointGeneration=0;
   CameraSharedBudget* shared=nullptr;
+  size_t endpointMarkBudgetBytes=32u*1024u*1024u;
   void check() const;
   void visit();
  };

@@ -233,6 +233,12 @@ install(DIRECTORY include/${PROJECT_NAME}/
 
 ## Add gtest based cpp test target and link libraries
 if(CATKIN_ENABLE_TESTING)
+  add_executable(opportunity_prototype_runner test/opportunity_prototype_runner.cpp test/fixtureAllocation.cpp)
+  target_link_libraries(opportunity_prototype_runner ${PROJECT_NAME} ${catkin_LIBRARIES} ${JSONCPP_LIBRARIES})
+  catkin_add_gtest(opportunity_route_test test/opportunity_route_test.cpp)
+  if(TARGET opportunity_route_test)
+    target_link_libraries(opportunity_route_test ${PROJECT_NAME} ${catkin_LIBRARIES})
+  endif()
   # Isolated counting diagnostic: no link to the camera evaluator/planner library.
   add_executable(bound_diagnostic_runner test/bound_diagnostic_runner.cpp test/fixtureAllocation.cpp)
   target_link_libraries(bound_diagnostic_runner ${catkin_LIBRARIES} ${JSONCPP_LIBRARIES})
