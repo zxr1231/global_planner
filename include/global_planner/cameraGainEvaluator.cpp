@@ -4,6 +4,11 @@
 #include <stdexcept>
 namespace globalPlanner {
 namespace {struct BudgetExceeded:std::runtime_error {using std::runtime_error::runtime_error;};}
+void CameraSharedBudget::check() const {
+ if(cancelled)throw BudgetExceeded("cancelled");
+ if(std::chrono::steady_clock::now()>=deadline)throw BudgetExceeded("absolute_deadline_exhausted");
+ if(externalCheck)externalCheck();
+}
 CameraGainEvaluator::CameraGainEvaluator(const mapManager::OccupancyMapSnapshot& m,const CameraGainConfig& c):map_(m),config_(c) {
  uint64_t count=1;
  for(int a=0;a<3;++a) {
@@ -46,10 +51,12 @@ CameraGainEvaluator::CameraGainEvaluator(const mapManager::OccupancyMapSnapshot&
   }
 }
 void CameraGainEvaluator::Work::check() const {
+ if(shared)shared->check();
  if(std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-started).count()>=budget.maxMilliseconds)
   throw BudgetExceeded("wall_budget_exhausted");
 }
 void CameraGainEvaluator::Work::visit() {
+ if(shared){if(shared->voxelVisits>=shared->maxVoxelVisits)throw BudgetExceeded("shared_voxel_budget_exhausted");++shared->voxelVisits;}
  if(visits>=budget.maxVoxelVisits)throw BudgetExceeded("voxel_budget_exhausted");
  ++visits;if((visits&255)==0)check();
 }
@@ -127,6 +134,21 @@ CameraGainEvaluator::AddressSet CameraGainEvaluator::visible(const Eigen::Vector
 }
 CameraGainEvaluator::AddressSet CameraGainEvaluator::visibleUnknown(const Eigen::Vector3d& p,double yaw) const {
  Work work{{},std::chrono::steady_clock::now(),0};return visible(p,yaw,work);
+}
+CameraPoseSetsResult CameraGainEvaluator::evaluatePoseSets(const std::vector<PathGainWaypoint>& poses,uint64_t version,CameraSharedBudget& budget) const {
+ CameraPoseSetsResult out;const auto begin=std::chrono::steady_clock::now();
+ try {
+  budget.check();
+  if(version!=map_.version)throw std::invalid_argument("map_version_mismatch");
+  Work work{{},begin,0};work.shared=&budget;
+  for(const auto& pose:poses){
+   budget.check();if(budget.samples>=budget.maxSamples)throw BudgetExceeded("shared_sample_budget_exhausted");
+   ++budget.samples;out.poseSets.push_back(visible(pose.position,pose.yaw,work));budget.check();
+  }
+  budget.check();out.mapVersion=version;out.valid=true;
+ }catch(const std::bad_alloc&){out.poseSets={};out.mapVersion=0;out.failureReason="memory_limit";}
+ catch(const std::exception& e){out.poseSets={};out.mapVersion=0;out.failureReason=e.what();}
+ out.evaluationMs=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-begin).count();return out;
 }
 CameraGainResult CameraGainEvaluator::evaluateSamples(const std::vector<PathGainWaypoint>& samples,double time,uint64_t version,const CameraGainBudget& budget) const {
  CameraGainResult result;Work work{budget,std::chrono::steady_clock::now(),0};
