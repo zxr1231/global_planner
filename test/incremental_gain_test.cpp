@@ -1,0 +1,29 @@
+#include <gtest/gtest.h>
+#include <global_planner/incrementalGainEvaluator.h>
+#include <random>
+using namespace globalPlanner;
+namespace {
+mapManager::OccupancyMapSnapshot grid(){mapManager::OccupancyMapSnapshot m;m.version=1;m.resolution=1;m.mapMin=Eigen::Vector3d::Zero();m.mapMax={12,8,4};m.dimensions={12,8,4};m.pMinLog=-1;m.pOccLog=.5;m.occupancy.assign(384,-2);m.inflated.assign(384,false);return m;}
+uint32_t id(int x,int y=3,int z=1){return x*32+y*4+z;}
+CameraGainConfig config(){CameraGainConfig c;c.fx=c.fy=1;c.cols=c.rows=c.pixelSkip=1;c.range=7;c.bodyToCamera<<0,0,1,0,-1,0,0,0,0,-1,0,0,0,0,0,1;c.planningMax={12,8,4};return c;}
+PathGainWaypoint pose(double x=1.5,double y=3.5,double yaw=0){PathGainWaypoint p;p.position={x,y,1.5};p.yaw=yaw;return p;}
+std::vector<IncrementalGainRoute> routes(){return {{1,2,{pose(),pose()}},{2,3,{pose(2.5),pose()}}};}
+void equal(const IncrementalGainResult& a,const IncrementalGainResult& b){ASSERT_EQ(a.routes.size(),b.routes.size());EXPECT_EQ(a.winner,b.winner);for(size_t i=0;i<a.routes.size();++i){const auto& x=a.routes[i];const auto& y=b.routes[i];EXPECT_EQ(x.uniqueAddresses,y.uniqueAddresses);EXPECT_EQ(x.marginalGains,y.marginalGains);EXPECT_EQ(x.rawGain,y.rawGain);EXPECT_EQ(x.uniqueGain,y.uniqueGain);EXPECT_EQ(x.sampleCount,y.sampleCount);EXPECT_EQ(x.mapVersion,y.mapVersion);EXPECT_DOUBLE_EQ(x.uniqueUtility,y.uniqueUtility);}}
+IncrementalGainResult oracle(const mapManager::OccupancyMapSnapshot& m,const CameraGainConfig& c,const std::vector<IncrementalGainRoute>& r){return IncrementalGainEvaluator(IncrementalGainMode::FULL).evaluate(m,c,r);}
+}
+TEST(IncrementalGain, TransparentChangesAvoidRaycastAndPreserveDuplicateCounts){auto m=grid();auto c=config();auto r=routes();IncrementalGainEvaluator e(IncrementalGainMode::DEPENDENCY);e.evaluate(m,c,r);m.version++;m.occupancy[id(3)]=-1;auto a=e.evaluate(m,c,r);equal(a,oracle(m,c,r));EXPECT_EQ(0u,a.stats.recomputedPoses);EXPECT_GT(a.stats.membershipUpdates,0u);EXPECT_GT(a.stats.propagatedMemberships,0u);EXPECT_EQ(0u,a.routes[0].marginalGains[1]);m.version++;m.occupancy[id(3)]=-2;equal(e.evaluate(m,c,r),oracle(m,c,r));}
+TEST(IncrementalGain, BlockerInsertionRemovalAndHiddenChanges){auto m=grid();auto c=config();auto r=routes();IncrementalGainEvaluator e(IncrementalGainMode::DEPENDENCY);e.evaluate(m,c,r);m.version++;m.occupancy[id(4)]=.5;auto a=e.evaluate(m,c,r);equal(a,oracle(m,c,r));EXPECT_EQ(2u,a.stats.recomputedPoses);m.version++;m.occupancy[id(7)]=.5;auto b=e.evaluate(m,c,r);equal(b,oracle(m,c,r));EXPECT_EQ(0u,b.stats.recomputedPoses);m.version++;m.occupancy[id(4)]=-1;m.occupancy[id(7)]=-1;auto d=e.evaluate(m,c,r);equal(d,oracle(m,c,r));EXPECT_GT(d.stats.recomputedPoses,0u);}
+TEST(IncrementalGain, OccluderOutsideRewardRegionStillInvalidates){auto m=grid();auto c=config();c.planningMin.x()=6;auto r=routes();IncrementalGainEvaluator e(IncrementalGainMode::DEPENDENCY);e.evaluate(m,c,r);m.version++;m.occupancy[id(4)]=.5;auto a=e.evaluate(m,c,r);equal(a,oracle(m,c,r));EXPECT_EQ(0u,a.routes[0].uniqueGain);m.version++;m.occupancy[id(4)]=-1;equal(e.evaluate(m,c,r),oracle(m,c,r));}
+TEST(IncrementalGain, GeometryYawRouteDeletionAndNewCandidate){auto m=grid();auto c=config();auto r=routes();IncrementalGainEvaluator e(IncrementalGainMode::DEPENDENCY);e.evaluate(m,c,r);m.version++;r[0].samples={pose(1.5,3.5,M_PI/2)};r.erase(r.begin()+1);r.push_back({3,1,{pose(2.5)}});equal(e.evaluate(m,c,r),oracle(m,c,r));m.version++;r[0].samples.push_back(pose());equal(e.evaluate(m,c,r),oracle(m,c,r));}
+TEST(IncrementalGain, EpochResetVersionGapReuseAndModelChanges){auto m=grid();auto c=config();auto r=routes();IncrementalGainEvaluator e(IncrementalGainMode::DEPENDENCY);e.evaluate(m,c,r);m.version+=7;m.occupancy[id(5)]=.5;equal(e.evaluate(m,c,r),oracle(m,c,r));m.occupancy[id(5)]=-1;auto a=e.evaluate(m,c,r);equal(a,oracle(m,c,r));EXPECT_TRUE(a.stats.reset);m.version=0;equal(e.evaluate(m,c,r),oracle(m,c,r));c.range=5;auto b=e.evaluate(m,c,r);equal(b,oracle(m,c,r));EXPECT_TRUE(b.stats.reset);EXPECT_TRUE(e.evaluate(m,c,r,true).stats.reset);}
+TEST(IncrementalGain, TinyCacheEvictionAndOversizeNeverChangesResults){auto m=grid();auto c=config();auto r=routes();for(auto limit:{size_t(0),size_t(2500),size_t(10000)}){IncrementalGainEvaluator e(IncrementalGainMode::DEPENDENCY,limit);for(int t=0;t<5;++t){++m.version;m.occupancy[id(2+t)]=(t%2)?.5:-1;auto a=e.evaluate(m,c,r);equal(a,oracle(m,c,r));EXPECT_LE(a.stats.cacheBytes,limit);}}}
+TEST(IncrementalGain, RegionAndSingleSnapshotControlsAreExact){auto m=grid();auto c=config();auto r=routes();for(auto mode:{IncrementalGainMode::REGION,IncrementalGainMode::SNAPSHOT_SHARED}){IncrementalGainEvaluator e(mode);e.evaluate(m,c,r);++m.version;m.occupancy[id(3)]=-1;auto a=e.evaluate(m,c,r);equal(a,oracle(m,c,r));EXPECT_GT(a.stats.recomputedPoses,0u);}}
+TEST(IncrementalGain, DifferentialRandomBatchesMultipleRaysAndCameraTransforms){auto m=grid();auto c=config();c.cols=7;c.rows=5;c.fx=5;c.fy=6;c.cx=3;c.cy=2;c.pixelSkip=1;c.range=4;c.bodyToCamera(0,3)=.1;auto r=routes();r.push_back({3,4,{pose(3.5,4.5,.2),pose(5.5,2.5,-.3)}});std::mt19937 rng(9041);IncrementalGainEvaluator e(IncrementalGainMode::DEPENDENCY);for(int t=0;t<35;++t){m.version+=3;for(int k=0;k<12;++k)m.occupancy[rng()%m.occupancy.size()]=std::array<double,3>{{-2,-1,.5}}[rng()%3];equal(e.evaluate(m,c,r),oracle(m,c,r));}}
+TEST(IncrementalGain, InvalidInputsClearStateAndAllowRecovery){
+ auto m=grid();auto c=config();auto r=routes();IncrementalGainEvaluator e(IncrementalGainMode::DEPENDENCY);e.evaluate(m,c,r);auto bad=r;bad.push_back(r[0]);
+ EXPECT_THROW(e.evaluate(m,c,bad),std::invalid_argument);
+ equal(e.evaluate(m,c,r),oracle(m,c,r));bad=r;bad[0].samples[0].yaw=std::numeric_limits<double>::quiet_NaN();
+ EXPECT_THROW(e.evaluate(m,c,bad),std::invalid_argument);
+ equal(e.evaluate(m,c,r),oracle(m,c,r));
+}
+int main(int argc,char** argv){testing::InitGoogleTest(&argc,argv);return RUN_ALL_TESTS();}

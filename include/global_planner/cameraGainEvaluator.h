@@ -42,6 +42,12 @@ struct CameraPoseSetsResult {
  std::vector<PathGainEvaluator::AddressSet> poseSets;
  double evaluationMs=0;
 };
+// Optional offline incremental evaluator trace. Existing calls do not collect dependencies.
+struct CameraVisibilityTrace {
+ PathGainEvaluator::AddressSet visible;
+ std::vector<uint32_t> transparent,blockers;
+ Eigen::Vector3i regionMin=Eigen::Vector3i::Zero(),regionMax=Eigen::Vector3i::Constant(-1);
+};
 // Caller owns immutable snapshot lifetime; no live-map reads or visibility-result cache.
 class CameraGainEvaluator {
 public:
@@ -52,6 +58,8 @@ public:
                                  uint64_t expectedVersion,const CameraGainBudget& = {}) const;
  size_t rayCount() const{return rays_.size();}
  size_t allocatedCapacityBytes() const{return sizeof(*this)+rays_.capacity()*sizeof(Eigen::Vector3d)+opticalState_.capacity()*sizeof(int8_t);}
+ const std::vector<int8_t>& opticalState() const{return opticalState_;}
+ std::vector<CameraVisibilityTrace> traceSamples(const std::vector<PathGainWaypoint>&,bool dependencies) const;
  CameraPoseSetsResult evaluatePoseSets(const std::vector<PathGainWaypoint>&,
                                       uint64_t expectedVersion,CameraSharedBudget&) const;
  // Optional per-call representation cap. Existing signatures/config layouts remain intact.
@@ -78,7 +86,7 @@ private:
  };
  bool inBounds(const Eigen::Vector3i&) const;
  uint32_t address(const Eigen::Vector3i&) const;
- AddressSet visible(const Eigen::Vector3d&,double,Work&) const;
+ AddressSet visible(const Eigen::Vector3d&,double,Work&,CameraVisibilityTrace* trace=nullptr,bool dependencies=false) const;
 };
 }
 #endif

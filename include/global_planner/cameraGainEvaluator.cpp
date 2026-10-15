@@ -66,7 +66,7 @@ bool CameraGainEvaluator::inBounds(const Eigen::Vector3i& i) const {
 uint32_t CameraGainEvaluator::address(const Eigen::Vector3i& i) const {
  return uint32_t(uint64_t(i.x())*map_.dimensions.y()*map_.dimensions.z()+uint64_t(i.y())*map_.dimensions.z()+i.z());
 }
-CameraGainEvaluator::AddressSet CameraGainEvaluator::visible(const Eigen::Vector3d& p,double yaw,Work& work) const {
+CameraGainEvaluator::AddressSet CameraGainEvaluator::visible(const Eigen::Vector3d& p,double yaw,Work& work,CameraVisibilityTrace* trace,bool dependencies) const {
  if(!p.allFinite() || !std::isfinite(yaw))throw std::invalid_argument("nonfinite camera pose");
  work.check();
  const double cs=std::cos(yaw),sn=std::sin(yaw);
@@ -77,6 +77,7 @@ CameraGainEvaluator::AddressSet CameraGainEvaluator::visible(const Eigen::Vector
  // Reject out-of-map origin before integer conversion.
  if((start.array()<0).any() || (start.array()>=map_.dimensions.cast<double>().array()).any())return {};
  const Eigen::Vector3i sensor=start.array().floor().cast<int>();
+ if(trace){trace->regionMin=sensor;trace->regionMax=sensor;}
  AddressSet result;std::unordered_set<uint32_t> endpoints;
  // Local generation marks are ray-endpoint scratch, not cached map/visibility results.
  const bool denseMarks=map_.occupancy.size()<=work.endpointMarkBudgetBytes/sizeof(uint32_t);
@@ -98,6 +99,7 @@ CameraGainEvaluator::AddressSet CameraGainEvaluator::visible(const Eigen::Vector
    work.endpointMarks[endpointId]=work.endpointGeneration;
   }else if(!endpoints.insert(endpointId).second)continue;
   if(terminal==sensor)continue;
+  if(trace){trace->regionMin=trace->regionMin.cwiseMin(terminal);trace->regionMax=trace->regionMax.cwiseMax(terminal);}
   representatives.push_back({end,terminal});
  }
  const auto traversal=work.budget.profile?std::chrono::steady_clock::now():work.started;
@@ -123,7 +125,8 @@ CameraGainEvaluator::AddressSet CameraGainEvaluator::visible(const Eigen::Vector
    current[a]+=step[a];linear+=step[a]*stride[a];maximum[a]+=delta[a];work.visit();
    if(!inBounds(current))break;
    const auto id=uint32_t(linear);const auto state=opticalState_[id];
-   if(state==1)break;
+   if(state==1){if(trace&&dependencies)trace->blockers.push_back(id);break;}
+   if(trace&&dependencies)trace->transparent.push_back(id);
    if(state==-1)result.insert(id);
    if(current==terminal)break;
    if(k==safety-1)throw std::runtime_error("camera traversal safety bound exceeded");
@@ -131,6 +134,14 @@ CameraGainEvaluator::AddressSet CameraGainEvaluator::visible(const Eigen::Vector
  }
  if(work.budget.profile)work.traversalMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-traversal).count();
  return result;
+}
+std::vector<CameraVisibilityTrace> CameraGainEvaluator::traceSamples(const std::vector<PathGainWaypoint>& samples,bool dependencies) const {
+ Work work{{},std::chrono::steady_clock::now(),0};std::vector<CameraVisibilityTrace> out;out.reserve(samples.size());
+ for(const auto& p:samples){
+  out.emplace_back();auto& t=out.back();t.visible=visible(p.position,p.yaw,work,&t,dependencies);
+  for(auto* v:{&t.transparent,&t.blockers}){std::sort(v->begin(),v->end());v->erase(std::unique(v->begin(),v->end()),v->end());v->shrink_to_fit();}
+ }
+ return out;
 }
 CameraGainEvaluator::AddressSet CameraGainEvaluator::visibleUnknown(const Eigen::Vector3d& p,double yaw) const {
  Work work{{},std::chrono::steady_clock::now(),0};return visible(p,yaw,work);

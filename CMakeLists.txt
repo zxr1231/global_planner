@@ -233,6 +233,15 @@ install(DIRECTORY include/${PROJECT_NAME}/
 
 ## Add gtest based cpp test target and link libraries
 if(CATKIN_ENABLE_TESTING)
+  # I4 offline prototype is isolated from the online global_planner library.
+  add_library(incremental_gain_prototype include/global_planner/incrementalGainEvaluator.cpp)
+  target_link_libraries(incremental_gain_prototype ${PROJECT_NAME} ${catkin_LIBRARIES})
+  catkin_add_gtest(incremental_gain_test test/incremental_gain_test.cpp)
+  if(TARGET incremental_gain_test)
+    target_link_libraries(incremental_gain_test incremental_gain_prototype ${PROJECT_NAME} ${catkin_LIBRARIES})
+  endif()
+  add_executable(incremental_gain_runner test/incremental_gain_runner.cpp test/fixtureAllocation.cpp)
+  target_link_libraries(incremental_gain_runner incremental_gain_prototype ${PROJECT_NAME} ${catkin_LIBRARIES} ${JSONCPP_LIBRARIES})
   add_executable(opportunity_prototype_runner test/opportunity_prototype_runner.cpp test/fixtureAllocation.cpp)
   target_link_libraries(opportunity_prototype_runner ${PROJECT_NAME} ${catkin_LIBRARIES} ${JSONCPP_LIBRARIES})
   catkin_add_gtest(opportunity_route_test test/opportunity_route_test.cpp)
