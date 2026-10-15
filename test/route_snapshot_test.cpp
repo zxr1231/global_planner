@@ -95,10 +95,13 @@ TEST(RouteSnapshot, ScoringAndRouteStartStayFixedDuringOdometryUpdates) {
  using A=globalPlanner::RouteControlTestAccess;A::configure(planner,map);ASSERT_TRUE(A::generate(planner,"distance_single"));
  std::vector<std::shared_ptr<PRM::Node>> best;planner.findBestPath(A::paths(planner),best);const auto expected=A::metrics(planner);
  const auto start=A::paths(planner).front().front()->pos;
- std::atomic<bool> done{false};std::thread writer([&]{
+ std::atomic<bool> done{false},updated{false};std::thread writer([&]{
   while(!done){auto odom=boost::make_shared<nav_msgs::Odometry>();odom->pose.pose.position.x=2;odom->pose.pose.position.z=1;
-   odom->pose.pose.orientation=globalPlanner::quaternion_from_rpy(0,0,1.0);planner.odomCB(odom);}
+   odom->pose.pose.orientation=globalPlanner::quaternion_from_rpy(0,0,1.0);planner.odomCB(odom);updated=true;}
  });
+ // On a pinned single core the scoring loop can finish before the writer is scheduled.
+ // Establish one actual odometry update before testing snapshot isolation/live fallback.
+ while(!updated.load())std::this_thread::yield();
  for(int i=0;i<20;++i){planner.findBestPath(A::paths(planner),best);EXPECT_DOUBLE_EQ(expected[0].score,A::metrics(planner)[0].score);EXPECT_DOUBLE_EQ(expected[0].yawDistance,A::metrics(planner)[0].yawDistance);EXPECT_EQ(start,A::paths(planner).front().front()->pos);}
  done=true;writer.join();
  // Historical path still uses its live-yaw semantics when no new-control snapshot is active.
